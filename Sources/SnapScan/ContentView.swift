@@ -1,0 +1,492 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct ContentView: View {
+    @Environment(ScannerEngine.self) private var engine
+    @Environment(\.openWindow) private var openWindow
+    @State private var library = ScanLibrary.shared
+    /// nil = the in-progress scan session; otherwise a saved PDF to preview.
+    @State private var selection: URL?
+    @State private var enlargedPage: ScannedPage?
+
+    // Document name field
+    @State private var draftName = ""
+    @State private var lastEngineName = ""
+    @FocusState private var nameFieldFocused: Bool
+
+    // Page grid
+    @State private var selectedPages: Set<UUID> = []
+    @FocusState private var gridFocused: Bool
+    @AppStorage("thumbnailSize") private var thumbnailSize = 160.0
+    @State private var pinchScale: CGFloat = 1
+
+    // Sidebar inline rename
+    @State private var renamingDocumentID: UUID?
+    @State private var renameDraft = ""
+    @State private var renamePendingID: UUID?
+    @FocusState private var renameFieldFocused: Bool
+
+    var body: some View {
+        NavigationSplitView {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+        } detail: {
+            detail
+        }
+        .frame(minWidth: 780, minHeight: 480)
+        .toolbar { toolbarContent }
+        .navigationTitle("SnapScan")
+        .navigationSubtitle(subtitle)
+        .task {
+            WindowOpener.shared.openWindowAction = openWindow
+            library.setMonitoredFolder(engine.settings.destinationURL)
+        }
+        .onChange(of: engine.settings.destinationPath) {
+            library.setMonitoredFolder(engine.settings.destinationURL)
+        }
+        .onChange(of: engine.documentURL) {
+            library.refresh()
+            if engine.documentURL != nil { selection = nil }
+        }
+        .onChange(of: engine.pages.count) { library.refresh() }
+        .onChange(of: engine.documentDisplayName) { _, newName in
+            // Follow the engine's name unless the user is mid-edit.
+            if draftName == lastEngineName { draftName = newName }
+            lastEngineName = newName
+        }
+        .onChange(of: engine.status) { _, newStatus in
+            // A fresh document's scan just started: offer the proposed name,
+            // focused and fully selected, so typing + return renames it.
+            if case .scanning = newStatus, engine.pages.isEmpty, selection == nil {
+                draftName = engine.documentDisplayName
+                lastEngineName = draftName
+                nameFieldFocused = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+                }
+            }
+        }
+        .sheet(item: $enlargedPage) { page in
+            pagePreview(page)
+        }
+    }
+
+    private var subtitle: String {
+        switch engine.status {
+        case .detecting: "Looking for scanner…"
+        case .scanning(let page): "Scanning page \(page)…"
+        case .processing(let page): "Straightening page \(page)…"
+        case .noScanner: "Scanner not connected"
+        case .idle: engine.scannerName ?? ""
+        }
+    }
+
+    /// True while there is a scan session to show or name.
+    private var sessionActive: Bool {
+        if !engine.pages.isEmpty { return true }
+        switch engine.status {
+        case .scanning, .processing: return true
+        default: return false
+        }
+    }
+
+    // MARK: - Sidebar
+
+    private var sidebar: some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                if !engine.pages.isEmpty {
+                    currentScanRow
+                }
+                ForEach(library.documents.filter { $0.url != engine.documentURL }) { document in
+                    DragRow(
+                        url: document.url,
+                        interceptsClicks: renamingDocumentID != document.id
+                    ) {
+                        rowClicked(document)
+                    } onMoved: { url in
+                        engine.documentWasMoved(url)
+                        if selection == url { selection = nil }
+                        library.refresh()
+                    } content: {
+                        documentRow(document, isSelected: selection == document.url)
+                    }
+                    .frame(height: 44)
+                }
+                if library.documents.isEmpty && engine.pages.isEmpty {
+                    Text("No scans yet")
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 24)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    /// Click selects; a second click on the already-selected row (after a
+    /// pause, Finder-style) begins an inline rename.
+    private func rowClicked(_ document: ScanDocument) {
+        if selection == document.url, renamingDocumentID == nil {
+            renamePendingID = document.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard renamePendingID == document.id, selection == document.url else { return }
+                renamePendingID = nil
+                beginRename(document)
+            }
+        } else {
+            selection = document.url
+            renamePendingID = nil
+            commitOrCancelRename()
+        }
+    }
+
+    private func beginRename(_ document: ScanDocument) {
+        renameDraft = document.name
+        renamingDocumentID = document.id
+        renameFieldFocused = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+        }
+    }
+
+    private func commitOrCancelRename() {
+        renamingDocumentID = nil
+        renameFieldFocused = false
+    }
+
+    private func performRename(_ document: ScanDocument) {
+        defer { commitOrCancelRename() }
+        let cleaned = ScannerEngine.sanitizeFileName(renameDraft)
+        guard !cleaned.isEmpty, cleaned != document.name else { return }
+        let directory = document.url.deletingLastPathComponent()
+        var destination = directory.appendingPathComponent("\(cleaned).pdf")
+        var counter = 2
+        while FileManager.default.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent("\(cleaned) (\(counter)).pdf")
+            counter += 1
+        }
+        do {
+            try FileManager.default.moveItem(at: document.url, to: destination)
+            if selection == document.url { selection = destination }
+            library.refresh()
+        } catch {
+            engine.lastError = "Couldn't rename: \(error.localizedDescription)"
+        }
+    }
+
+    private var currentScanRow: some View {
+        Button {
+            selection = nil
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: engine.documentOpen ? "doc.badge.ellipsis" : "doc.viewfinder")
+                    .foregroundStyle(.tint)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(engine.documentURL?.deletingPathExtension().lastPathComponent
+                        ?? "Current Scan")
+                        .lineLimit(1)
+                    Text("\(engine.pages.count) page\(engine.pages.count == 1 ? "" : "s")"
+                        + (engine.documentOpen ? " — scanning adds more" : ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(selection == nil ? Color.accentColor.opacity(0.18) : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if let url = engine.documentURL {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+            }
+        }
+    }
+
+    private func documentRow(_ document: ScanDocument, isSelected: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.text")
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                if renamingDocumentID == document.id {
+                    TextField("Name", text: $renameDraft)
+                        .textFieldStyle(.plain)
+                        .focused($renameFieldFocused)
+                        .onSubmit { performRename(document) }
+                        .onExitCommand { commitOrCancelRename() }
+                } else {
+                    Text(document.name)
+                        .lineLimit(1)
+                }
+                Text(document.modified.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor.opacity(0.18) : .clear)
+        )
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Detail
+
+    @ViewBuilder
+    private var detail: some View {
+        if let selection {
+            PDFPreview(url: selection)
+                .ignoresSafeArea(edges: .bottom)
+        } else if !sessionActive {
+            emptyState
+        } else {
+            let cellSize = min(420, max(80, thumbnailSize * pinchScale))
+            ScrollView {
+                LazyVGrid(
+                    columns: [
+                        GridItem(
+                            .adaptive(minimum: cellSize, maximum: cellSize * 1.35),
+                            spacing: 16)
+                    ],
+                    spacing: 16
+                ) {
+                    ForEach(Array(engine.pages.enumerated()), id: \.element.id) { index, page in
+                        pageCell(page, number: index + 1, size: cellSize)
+                    }
+                }
+                .padding()
+            }
+            .gesture(
+                MagnifyGesture()
+                    .onChanged { value in pinchScale = value.magnification }
+                    .onEnded { _ in
+                        thumbnailSize = min(420, max(80, thumbnailSize * pinchScale))
+                        pinchScale = 1
+                    }
+            )
+            .focusable()
+            .focusEffectDisabled()
+            .focused($gridFocused)
+            .onDeleteCommand { deleteSelectedPages() }
+            .onKeyPress(.deleteForward) {
+                deleteSelectedPages()
+                return .handled
+            }
+            .onExitCommand { selectedPages = [] }
+            .safeAreaInset(edge: .top) { documentHeader }
+            .safeAreaInset(edge: .bottom) { bottomBar }
+        }
+    }
+
+    private func deleteSelectedPages() {
+        guard !selectedPages.isEmpty else { return }
+        engine.deletePages(withIDs: selectedPages)
+        selectedPages = []
+    }
+
+    private var documentHeader: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "character.cursor.ibeam")
+                .foregroundStyle(.secondary)
+            TextField("Document name", text: $draftName)
+                .textFieldStyle(.roundedBorder)
+                .focused($nameFieldFocused)
+                .onSubmit {
+                    engine.renameDocument(to: draftName)
+                    nameFieldFocused = false
+                    // Return doubles as the Done button when it's available.
+                    if engine.documentOpen, !engine.pages.isEmpty, !engine.isBusy {
+                        engine.done()
+                    }
+                }
+            Text(".pdf")
+                .foregroundStyle(.secondary)
+            if engine.documentOpen, !engine.pages.isEmpty {
+                Button("Done") {
+                    engine.renameDocument(to: draftName)
+                    engine.done()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(engine.isBusy)
+                .help("Finish this document — the next scan starts a new PDF")
+            }
+        }
+        .font(.title3)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "doc.viewfinder")
+                .font(.system(size: 56))
+                .foregroundStyle(.secondary)
+            Text("Ready to Scan")
+                .font(.title2.weight(.semibold))
+            Text(
+                "Load paper, then press Scan here or the button on the scanner.\n"
+                    + "PDFs are saved to \(engine.settings.destinationPath).\n"
+                    + "Settings are in SnapScan ▸ Settings (⌘,)."
+            )
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+            if engine.feederWasEmpty {
+                Label("The feeder was empty — load paper and try again.", systemImage: "tray")
+                    .foregroundStyle(.orange)
+                    .padding(.top, 8)
+            }
+            if let error = engine.lastError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .padding(.top, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private func pageCell(_ page: ScannedPage, number: Int, size: CGFloat) -> some View {
+        let isSelected = selectedPages.contains(page.id)
+        return VStack(spacing: 6) {
+            Image(nsImage: page.thumbnail)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxHeight: size * 1.4)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(
+                            isSelected ? Color.accentColor : Color.secondary.opacity(0.3),
+                            lineWidth: isSelected ? 3 : 1)
+                )
+                .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                .onTapGesture(count: 2) { enlargedPage = page }
+                .onTapGesture {
+                    let commandHeld =
+                        NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+                    if commandHeld {
+                        if isSelected {
+                            selectedPages.remove(page.id)
+                        } else {
+                            selectedPages.insert(page.id)
+                        }
+                    } else {
+                        selectedPages = [page.id]
+                    }
+                    gridFocused = true
+                }
+            Text("Page \(number)")
+                .font(.caption)
+                .foregroundStyle(isSelected ? .primary : .secondary)
+        }
+        .contextMenu {
+            Button("View Larger") { enlargedPage = page }
+            Button(
+                isSelected && selectedPages.count > 1
+                    ? "Delete \(selectedPages.count) Pages" : "Delete Page",
+                role: .destructive
+            ) {
+                if isSelected {
+                    deleteSelectedPages()
+                } else {
+                    engine.deletePage(page)
+                }
+            }
+        }
+    }
+
+    private func pagePreview(_ page: ScannedPage) -> some View {
+        VStack(spacing: 0) {
+            ScrollView([.horizontal, .vertical]) {
+                Image(nsImage: page.thumbnail)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: 900, maxHeight: 1100)
+            }
+            Divider()
+            HStack {
+                Spacer()
+                Button("Close") { enlargedPage = nil }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
+        }
+        .frame(minWidth: 500, minHeight: 600)
+    }
+
+    private var bottomBar: some View {
+        HStack {
+            Text("\(engine.pages.count) page\(engine.pages.count == 1 ? "" : "s")")
+                .foregroundStyle(.secondary)
+            if let error = engine.lastError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(.bar)
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            scannerStatusIndicator
+            if case .scanning = engine.status {
+                Button {
+                    engine.cancelScan()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                ProgressView().controlSize(.small)
+            } else {
+                Button {
+                    Task { await engine.scan() }
+                } label: {
+                    Label("Scan", systemImage: "scanner")
+                }
+                .disabled(engine.isBusy || !engine.scannerPresent)
+            }
+        }
+    }
+
+    private var scannerStatusIndicator: some View {
+        Button {
+            Task { await engine.detectScanner() }
+        } label: {
+            if !engine.scannerPresent {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+            } else if engine.status == .detecting {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+        }
+        .help(
+            !engine.scannerPresent
+                ? "Scanner not connected — plug in the iX500 and open its feeder flap"
+                : engine.status == .detecting
+                    ? "Looking for scanner…"
+                    : (engine.scannerName ?? "Scanner ready"))
+    }
+}

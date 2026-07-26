@@ -1,0 +1,23 @@
+# Build products
+.build/
+dist/
+DerivedData/
+
+# Vendored SANE: keep the source tarballs (GPL source availability),
+# ignore everything built from them. scripts/build-sane.sh regenerates.
+vendor/*
+!vendor/src/
+vendor/src/*
+!vendor/src/*.tar.gz
+!vendor/src/*.tar.bz2
+!vendor/src/*.txt
+
+# Generated framework (scripts/make-xcframework.sh)
+SANE.xcframework/
+
+# Xcode / SwiftPM user state
+xcuserdata/
+*.xcuserstate
+.swiftpm/
+
+.DS_Store
