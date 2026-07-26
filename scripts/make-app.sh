@@ -19,14 +19,23 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$REPO/.build/release/SnapScan" "$CONTENTS/MacOS/SnapScan"
 cp "$REPO/Support/Info.plist" "$CONTENTS/Info.plist"
 
+# The SwiftPM binary links libsane by its vendor path; point it at the
+# bundled copy instead. (Xcode builds link @rpath via SANE.xcframework.)
+install_name_tool \
+    -change "$REPO/vendor/lib/libsane.1.dylib" "@rpath/libsane.1.dylib" \
+    -add_rpath "@executable_path/../Frameworks" \
+    "$CONTENTS/MacOS/SnapScan" 2>/dev/null
+
 echo "== embed sane runtime =="
 "$REPO/scripts/embed-sane.sh" "$CONTENTS"
 
 echo "== codesign (ad hoc) =="
 codesign --force -s - "$APP" 2>/dev/null
 
-echo "== verify bundled scanimage =="
-SANE_CONFIG_DIR="$CONTENTS/Resources/sane/etc/sane.d" \
-    "$CONTENTS/Resources/sane/bin/scanimage" --version
+echo "== verify bundle links =="
+otool -L "$CONTENTS/MacOS/SnapScan" | grep -E "libsane" || {
+    echo "libsane link missing" >&2
+    exit 1
+}
 
 echo "Done: $APP"

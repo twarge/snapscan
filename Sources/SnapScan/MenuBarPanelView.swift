@@ -25,7 +25,21 @@ struct MenuBarPanelView: View {
                 Spacer()
             }
 
-            if let page = engine.pages.last {
+            if let live = engine.livePageImage {
+                HStack(spacing: 10) {
+                    Image(nsImage: NSImage(cgImage: live, size: .zero))
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 88)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .shadow(radius: 1)
+                    Text("Scanning…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else if let page = engine.pages.last {
                 HStack(spacing: 10) {
                     Image(nsImage: page.thumbnail)
                         .resizable()

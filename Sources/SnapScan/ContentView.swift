@@ -265,6 +265,9 @@ struct ContentView: View {
                     ForEach(Array(engine.pages.enumerated()), id: \.element.id) { index, page in
                         pageCell(page, number: index + 1, size: cellSize)
                     }
+                    if case .scanning = engine.status {
+                        liveScanCell(size: cellSize)
+                    }
                 }
                 .padding()
             }
@@ -405,6 +408,41 @@ struct ContentView: View {
                 } else {
                     engine.deletePage(page)
                 }
+            }
+        }
+    }
+
+    /// The page currently feeding through the scanner, growing as rows arrive.
+    private func liveScanCell(size: CGFloat) -> some View {
+        VStack(spacing: 6) {
+            Group {
+                if let live = engine.livePageImage {
+                    Image(nsImage: NSImage(cgImage: live, size: .zero))
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.quaternary)
+                        .aspectRatio(0.77, contentMode: .fit)
+                        .overlay { ProgressView() }
+                }
+            }
+            .frame(maxHeight: size * 1.4)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.accentColor.opacity(0.6), lineWidth: 2)
+            )
+            .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+            if let fraction = engine.livePageFraction {
+                ProgressView(value: fraction)
+                    .controlSize(.small)
+                    .frame(maxWidth: size * 0.8)
+            } else {
+                Text("Scanning…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

@@ -5,15 +5,15 @@ import XCTest
 
 final class PDFBuilderTests: XCTestCase {
     private func makePage(width: Int, height: Int, dpi: Int) throws -> ScannedPage {
-        var data = Data("P5\n\(width) \(height)\n255\n".utf8)
-        data.append(Data(repeating: 200, count: width * height))
-        let image = try PNM.decode(data)
-        return ScannedPage(
-            fileURL: URL(fileURLWithPath: "/dev/null"), image: image, dpi: dpi)
+        let pixels = Data(repeating: 200, count: width * height)
+        let image = try XCTUnwrap(
+            FrameImage.make(
+                pixels: pixels, width: width, height: height,
+                bytesPerRow: width, format: .gray8))
+        return ScannedPage(image: image, dpi: dpi)
     }
 
     func testWritesMultiPagePDFWithPhysicalSize() throws {
-        // 300 dpi letter-ish page: 2550x3300 px is full letter; use small stand-in.
         let pages = [
             try makePage(width: 300, height: 600, dpi: 300),
             try makePage(width: 150, height: 150, dpi: 150),

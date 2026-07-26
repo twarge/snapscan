@@ -41,6 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["SNAPSCAN_TEST_TOAST"] != nil {
             toast.show(engine: engine)
         }
+        // Test hook: starts a scan shortly after launch (needs paper loaded).
+        if ProcessInfo.processInfo.environment["SNAPSCAN_TEST_SCAN"] != nil {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                await ScannerEngine.shared.scan()
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

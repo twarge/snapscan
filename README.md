@@ -5,9 +5,11 @@ them as multi-page PDFs.
 
 ScanSnap scanners don't speak TWAIN or Apple's Image Capture protocol, so this
 app drives the scanner through [SANE](http://www.sane-project.org)'s `fujitsu`
-backend over **USB**. The whole SANE stack (libusb + sane-backends) is built
-from source and embedded inside the app bundle — no Homebrew, drivers, or
-ScanSnap Home required at runtime.
+backend over **USB**, calling the SANE C API **in-process** (libsane is
+linked directly, packaged as `SANE.xcframework` for Xcode). That's what makes
+pages appear live in the window while the sheet is still feeding. The whole
+SANE stack (libusb + sane-backends) is built from source and embedded inside
+the app bundle — no Homebrew, drivers, or ScanSnap Home required at runtime.
 
 ## Using it
 
@@ -55,9 +57,11 @@ the system login items (the app should live in /Applications for that).
 ## Building
 
 ```bash
-scripts/build-sane.sh   # downloads + builds libusb and sane-backends into vendor/
-scripts/make-app.sh     # swift build + assembles dist/SnapScan.app
-swift test              # decoder, PDF, sensor-parse, and orientation tests
+scripts/build-sane.sh        # downloads + builds libusb and sane-backends into vendor/
+scripts/make-xcframework.sh  # wraps vendored libsane as SANE.xcframework (Xcode builds)
+scripts/make-app.sh          # swift build + assembles dist/SnapScan.app
+swift test                   # frame/PDF/orientation/filename tests
+swift run SaneSmokeTest      # headless hardware check of the in-process SANE stack
 ```
 
 Or open `SnapScan.xcodeproj` — the app target runs, debugs, and tests
@@ -70,14 +74,18 @@ the copy in `Contents/Resources/sane`.
 
 ## How the pieces fit
 
-- `Sources/SnapScan/ScannerEngine.swift` — runs the bundled `scanimage` in
-  batch mode, parses page-by-page progress from stderr, and maps SANE exit
-  codes (7 = feeder empty) to friendly messages. It points the SANE dynamic
-  loader at the bundle via `SANE_CONFIG_DIR` and `LD_LIBRARY_PATH` (which
-  sane's dll loader honors on macOS too). While idle it polls the fujitsu
-  backend's `--scan` hardware sensor (edge-triggered) so the scanner's own
-  button starts a scan; polls are serialized against scans so they never
-  fight over the USB device.
+- `Sources/SnapScan/SaneSession.swift` — the in-process SANE layer: an
+  actor owning the blocking C calls (`sane_open`, `sane_start`, streaming
+  `sane_read`), emitting partial-page images as rows arrive and complete
+  pages per sheet. `sane_cancel` is async-safe by spec and bypasses the
+  actor so Stop works mid-read. The dll loader finds the bundled backend
+  and config via `SANE_CONFIG_DIR`/`LD_LIBRARY_PATH` set before
+  `sane_init`. The `CSane` Clang module comes from `SANE.xcframework`'s
+  headers in Xcode and `Sources/CSane` under SwiftPM.
+- `Sources/SnapScan/ScannerEngine.swift` — app-facing state machine:
+  document lifecycle, direct-save, post-processing, and the hardware-button
+  watch (reading the fujitsu `scan` sensor through the open handle, an
+  in-process option read instead of spawning anything).
 - `Sources/SnapScan/OrientationDetector.swift` — auto-rotate and deskew.
   Vision's fast OCR scores 0°/180° identically (it reads flipped text as
   confident gibberish) and accurate OCR silently auto-corrects all four

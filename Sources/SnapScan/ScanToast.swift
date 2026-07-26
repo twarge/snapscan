@@ -120,7 +120,15 @@ struct ScanToastView: View {
 
     @ViewBuilder
     private var thumbnail: some View {
-        if let page = engine.pages.last {
+        if let live = engine.livePageImage {
+            Image(nsImage: NSImage(cgImage: live, size: .zero))
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 52, height: 66)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .shadow(radius: 1)
+        } else if let page = engine.pages.last {
             Image(nsImage: page.thumbnail)
                 .resizable()
                 .aspectRatio(contentMode: .fit)

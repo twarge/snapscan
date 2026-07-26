@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Observation
 
@@ -23,6 +24,10 @@ final class ScannerEngine {
     var lastError: String?
     var feederWasEmpty = false
 
+    /// The page currently coming out of the scanner, updated as rows arrive.
+    var livePageImage: CGImage?
+    var livePageFraction: Double?
+
     /// The PDF the current pages are saved to (nil until the first batch lands).
     var documentURL: URL?
     /// True while the document accepts more batches; false once finalized via Done.
@@ -32,15 +37,15 @@ final class ScannerEngine {
     /// Library identity of the current document.
     private var currentDocumentID: UUID?
 
+    /// Fired around scans triggered by the scanner's physical button.
+    var onHardwareScanStarted: (() -> Void)?
+    var onHardwareScanFinished: (() -> Void)?
+
     /// The current document's name (without extension) for display and editing.
     var documentDisplayName: String {
         documentURL?.deletingPathExtension().lastPathComponent
             ?? pendingDocumentName ?? ""
     }
-
-    /// Fired around scans triggered by the scanner's physical button.
-    var onHardwareScanStarted: (() -> Void)?
-    var onHardwareScanFinished: (() -> Void)?
 
     var settings = ScanSettings.load() {
         didSet {
@@ -55,8 +60,6 @@ final class ScannerEngine {
     }
 
     private var deviceID: String?
-    private var currentProcess: Process?
-    private var pollInFlight = false
     private var watchTask: Task<Void, Never>?
     private var usbWatcher: USBWatcher?
     private let sessionDirectory: URL
@@ -64,7 +67,7 @@ final class ScannerEngine {
     private static let ix500VendorID = 0x04C5
     private static let ix500ProductID = 0x132B
 
-    /// Root of the SANE installation: contains bin/scanimage, lib/, etc/sane.d/.
+    /// Root of the SANE installation: contains lib/, etc/sane.d/.
     /// Resolution order: explicit env override, the app bundle, then the dev checkout.
     nonisolated static func sanePrefix() -> URL? {
         var candidates: [URL] = []
@@ -78,8 +81,8 @@ final class ScannerEngine {
             URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                 .appendingPathComponent("vendor"))
         return candidates.first {
-            FileManager.default.isExecutableFile(
-                atPath: $0.appendingPathComponent("bin/scanimage").path)
+            FileManager.default.isReadableFile(
+                atPath: $0.appendingPathComponent("lib/sane/libsane-fujitsu.1.so").path)
         }
     }
 
@@ -115,6 +118,7 @@ final class ScannerEngine {
             Task { await detectScanner() }
         } else {
             deviceID = nil
+            Task { await SaneSession.shared.closeDevice() }
             if !isBusy { status = .noScanner }
         }
     }
@@ -130,31 +134,25 @@ final class ScannerEngine {
 
     func detectScanner() async {
         guard !isBusy else { return }
+        guard let prefix = Self.sanePrefix() else {
+            lastError = "Bundled scanner library not found"
+            status = .noScanner
+            return
+        }
         status = .detecting
-        await drainPoll()
         lastError = nil
         defer { status = deviceID == nil ? .noScanner : .idle }
 
-        guard let prefix = Self.sanePrefix() else {
-            lastError = "Bundled scanner tools not found"
-            deviceID = nil
-            return
-        }
         do {
-            let result = try await Self.run(
-                prefix: prefix,
-                arguments: ["-f", "%d|%v %m%n"])
-            let line = result.stdout
-                .split(separator: "\n")
-                .first { $0.contains("|") }
-            if let line, let separator = line.firstIndex(of: "|") {
-                deviceID = String(line[..<separator])
-                scannerName = String(line[line.index(after: separator)...])
-                    .trimmingCharacters(in: .whitespaces)
-            } else {
+            let devices = try await SaneSession.shared.listDevices(prefix: prefix)
+            guard let device = devices.first else {
                 deviceID = nil
                 scannerName = nil
+                return
             }
+            try await SaneSession.shared.open(device: device.name, prefix: prefix)
+            deviceID = device.name
+            scannerName = "\(device.vendor) \(device.model)"
         } catch {
             deviceID = nil
             scannerName = nil
@@ -185,78 +183,89 @@ final class ScannerEngine {
             await detectScanner()
             guard deviceID != nil else { return }
         }
-        guard let device = deviceID, let prefix = Self.sanePrefix() else { return }
 
-        status = .scanning(page: pages.count + 1)
-        await drainPoll()
+        let firstPageIndex = pages.count
+        status = .scanning(page: firstPageIndex + 1)
+        let currentSettings = settings
 
-        let batchDirectory = sessionDirectory.appendingPathComponent(
-            UUID().uuidString, isDirectory: true)
-        try? FileManager.default.createDirectory(
-            at: batchDirectory, withIntermediateDirectories: true)
-
-        let paper = settings.paperSize.millimeters
-        var arguments = [
-            "-d", device,
-            "--source", settings.source.rawValue,
-            "--mode", settings.mode.rawValue,
-            "--resolution", String(settings.resolution),
-            "--page-width", String(paper.width),
-            "--page-height", String(paper.height),
-            "-x", String(paper.width),
-            "-y", String(paper.height),
-            "--format=pnm",
-            "--batch=\(batchDirectory.path)/page%04d.pnm",
-        ]
-        // Deskew is done in-app (Vision-based, confidence-gated) rather than
-        // with --swdeskew: the backend's estimator guesses badly on sparse
-        // pages and visibly tilts straight ones.
-        if settings.autocrop { arguments.append("--swcrop=yes") }
-        if settings.skipBlankPages { arguments += ["--swskip", "1.0"] }
-
-        let alreadyScanned = pages.count
-        var runError: String?
-        var exitCode: Int32 = 0
-        var stderr = ""
         do {
-            let result = try await Self.run(
-                prefix: prefix,
-                arguments: arguments,
-                onProcessStart: { [weak self] process in
-                    Task { @MainActor in self?.currentProcess = process }
-                },
-                onStderrLine: { [weak self] line in
-                    guard line.hasPrefix("Scanning page ") else { return }
-                    let number = Int(line.dropFirst("Scanning page ".count)) ?? 1
-                    Task { @MainActor in
-                        self?.status = .scanning(page: alreadyScanned + number)
-                    }
-                })
-            exitCode = result.exitCode
-            stderr = result.stderr
+            let result = try await SaneSession.shared.scanBatch(
+                settings: currentSettings,
+                startingAtPage: firstPageIndex
+            ) { [weak self] event in
+                Task { @MainActor in self?.handleBatchEvent(event) }
+            }
+            livePageImage = nil
+            livePageFraction = nil
+            if result.feederWasEmpty {
+                feederWasEmpty = true
+            }
         } catch {
-            runError = error.localizedDescription
+            livePageImage = nil
+            livePageFraction = nil
+            lastError = error.localizedDescription
         }
-        currentProcess = nil
 
-        await collectPages(from: batchDirectory, dpi: settings.resolution)
+        await postProcessPages(startingAt: firstPageIndex)
 
-        if pages.count > alreadyScanned {
+        if pages.count > firstPageIndex {
             saveDocument()
             documentOpen = settings.appendScans
-        } else if let runError {
-            lastError = runError
-        } else if exitCode == 7 {
-            // SANE_STATUS_NO_DOCS: the feeder is empty.
-            feederWasEmpty = true
-        } else if exitCode != 0 {
-            lastError = Self.friendlyError(from: stderr, exitCode: exitCode)
         }
         status = .idle
     }
 
+    private func handleBatchEvent(_ event: SaneSession.BatchEvent) {
+        switch event {
+        case .pageStarted(let index):
+            status = .scanning(page: index + 1)
+            livePageImage = nil
+            livePageFraction = nil
+        case .pagePartial(_, let image, let fraction):
+            livePageImage = image
+            livePageFraction = fraction
+        case .pageComplete(_, let image):
+            pages.append(ScannedPage(image: image, dpi: settings.resolution))
+            livePageImage = nil
+            livePageFraction = nil
+        }
+    }
+
+    /// Straightens/rotates freshly scanned pages in place. The raw pages are
+    /// already visible in the grid; corrections swap in as they finish.
+    private func postProcessPages(startingAt firstIndex: Int) async {
+        guard settings.autoRotate || settings.deskew else { return }
+        let autoRotate = settings.autoRotate
+        let deskew = settings.deskew
+        var index = firstIndex
+        while index < pages.count {
+            status = .processing(page: index + 1)
+            let original = pages[index].image
+            let corrected = await Task.detached(priority: .userInitiated) {
+                var image = original
+                if autoRotate {
+                    let rotation = OrientationDetector.rotationToUpright(for: image)
+                    if rotation != 0,
+                        let rotated = image.rotated(byDegreesClockwise: rotation) {
+                        image = rotated
+                    }
+                }
+                if deskew,
+                    let angle = OrientationDetector.skewCorrectionDegrees(for: image),
+                    let straightened = image.rotatedBySmallAngle(degreesClockwise: angle) {
+                    image = straightened
+                }
+                return image
+            }.value
+            if index < pages.count {
+                pages[index].image = corrected
+            }
+            index += 1
+        }
+    }
+
     func cancelScan() {
-        currentProcess?.terminate()
+        SaneSession.shared.cancelBox.cancel()
     }
 
     /// Finalizes the current document: the next scan starts a new PDF.
@@ -299,56 +308,6 @@ final class ScannerEngine {
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         return name.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func collectPages(from directory: URL, dpi: Int) async {
-        let files =
-            (try? FileManager.default.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: nil))?
-            .filter { $0.pathExtension == "pnm" }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []
-        for file in files {
-            guard var image = try? PNM.decode(contentsOf: file) else { continue }
-            if settings.autoRotate || settings.deskew {
-                status = .processing(page: pages.count + 1)
-                let original = image
-                let autoRotate = settings.autoRotate
-                let deskew = settings.deskew
-                image = await Task.detached(priority: .userInitiated) {
-                    var corrected = original
-                    if autoRotate {
-                        let rotation = OrientationDetector.rotationToUpright(for: corrected)
-                        if rotation != 0,
-                            let rotated = corrected.rotated(byDegreesClockwise: rotation) {
-                            corrected = rotated
-                        }
-                    }
-                    if deskew,
-                        let angle = OrientationDetector.skewCorrectionDegrees(for: corrected),
-                        let straightened = corrected.rotatedBySmallAngle(
-                            degreesClockwise: angle) {
-                        corrected = straightened
-                    }
-                    return corrected
-                }.value
-            }
-            pages.append(ScannedPage(fileURL: file, image: image, dpi: dpi))
-        }
-    }
-
-    private nonisolated static func friendlyError(from stderr: String, exitCode: Int32) -> String {
-        if stderr.contains("Device busy") {
-            return "The scanner is busy — is another scanning app using it?"
-        }
-        if stderr.contains("jammed") {
-            return "Paper jam — clear the feeder and try again."
-        }
-        if stderr.contains("cover open") {
-            return "The scanner cover is open."
-        }
-        let lines = stderr.split(separator: "\n").map(String.init)
-        let detail = lines.first { $0.contains("scanimage:") } ?? lines.last ?? ""
-        return detail.isEmpty ? "Scan failed (exit code \(exitCode))" : detail
     }
 
     // MARK: - Document persistence
@@ -418,12 +377,10 @@ final class ScannerEngine {
     }
 
     func deletePages(withIDs ids: Set<UUID>) {
-        let doomed = pages.filter { ids.contains($0.id) }
-        guard !doomed.isEmpty else { return }
-        for page in doomed {
-            try? FileManager.default.removeItem(at: page.fileURL)
-        }
+        guard !isBusy else { return }
+        let countBefore = pages.count
         pages.removeAll { ids.contains($0.id) }
+        guard pages.count != countBefore else { return }
         if pages.isEmpty {
             // All content removed: the document no longer has meaning.
             if let documentURL {
@@ -440,9 +397,6 @@ final class ScannerEngine {
     }
 
     private func discardSessionPages() {
-        for page in pages {
-            try? FileManager.default.removeItem(at: page.fileURL)
-        }
         pages.removeAll()
     }
 
@@ -459,113 +413,18 @@ final class ScannerEngine {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self else { return }
-                guard self.status == .idle, !self.pollInFlight,
-                    let device = self.deviceID,
-                    let prefix = Self.sanePrefix()
+                guard self.status == .idle, self.scannerPresent, self.deviceID != nil
                 else { continue }
 
-                self.pollInFlight = true
-                let result = try? await Self.run(
-                    prefix: prefix, arguments: ["-d", device, "-A"])
-                self.pollInFlight = false
-
-                guard let result, result.exitCode == 0,
-                    let pressed = Self.parseSensor(named: "scan", in: result.stdout)
-                else { continue }
+                guard let pressed = await SaneSession.shared.readSensor("scan") else {
+                    continue
+                }
                 if pressed, !previouslyPressed {
                     self.onHardwareScanStarted?()
                     await self.scan()
                     self.onHardwareScanFinished?()
                 }
                 previouslyPressed = pressed
-            }
-        }
-    }
-
-    /// Waits for an in-flight button poll to release the device before scanning.
-    private func drainPoll() async {
-        while pollInFlight {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-    }
-
-    /// Parses a sensor's current value from `scanimage -A` output.
-    /// Lines look like: `    --scan[=(yes|no)] [no] [hardware]`
-    nonisolated static func parseSensor(named name: String, in output: String) -> Bool? {
-        for line in output.split(separator: "\n") {
-            guard let optionRange = line.range(of: "--\(name)[") else { continue }
-            let rest = line[optionRange.upperBound...]
-            guard let closing = rest.range(of: "] [") else { continue }
-            let value = rest[closing.upperBound...]
-            if value.hasPrefix("yes]") { return true }
-            if value.hasPrefix("no]") { return false }
-        }
-        return nil
-    }
-
-    // MARK: - Process plumbing
-
-    struct ProcessResult {
-        let exitCode: Int32
-        let stdout: String
-        let stderr: String
-    }
-
-    private nonisolated static func run(
-        prefix: URL,
-        arguments: [String],
-        onProcessStart: (@Sendable (Process) -> Void)? = nil,
-        onStderrLine: (@Sendable (String) -> Void)? = nil
-    ) async throws -> ProcessResult {
-        let process = Process()
-        process.executableURL = prefix.appendingPathComponent("bin/scanimage")
-        process.arguments = arguments
-
-        // Point the SANE dll loader at the bundled config and backend directories
-        // (dll.c prepends LD_LIBRARY_PATH to its backend search path, on macOS too).
-        var environment = ProcessInfo.processInfo.environment
-        environment["SANE_CONFIG_DIR"] = prefix.appendingPathComponent("etc/sane.d").path
-        environment["LD_LIBRARY_PATH"] = prefix.appendingPathComponent("lib/sane").path
-        process.environment = environment
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        process.standardInput = FileHandle.nullDevice
-
-        // Register for termination before launching so the signal can never be missed.
-        let (terminated, terminationSignal) = AsyncStream.makeStream(of: Void.self)
-        process.terminationHandler = { _ in terminationSignal.finish() }
-
-        try process.run()
-        onProcessStart?(process)
-
-        async let stdoutData = stdoutPipe.fileHandleForReading.readToEndAsync()
-        var stderrText = ""
-        for try await line in stderrPipe.fileHandleForReading.bytes.lines {
-            stderrText += line + "\n"
-            onStderrLine?(line)
-        }
-        let stdout = String(data: (try? await stdoutData) ?? Data(), encoding: .utf8) ?? ""
-
-        for await _ in terminated {}
-        return ProcessResult(
-            exitCode: process.terminationStatus,
-            stdout: stdout,
-            stderr: stderrText)
-    }
-}
-
-extension FileHandle {
-    fileprivate func readToEndAsync() async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    continuation.resume(returning: try self.readToEnd() ?? Data())
-                } catch {
-                    continuation.resume(throwing: error)
-                }
             }
         }
     }

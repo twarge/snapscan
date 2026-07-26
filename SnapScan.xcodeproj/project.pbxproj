@@ -16,18 +16,20 @@
 		AB0100000000000000000007 /* OrientationDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000007 /* OrientationDetector.swift */; };
 		AB0100000000000000000008 /* PDFBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000008 /* PDFBuilder.swift */; };
 		AB0100000000000000000009 /* PDFPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000009 /* PDFPreview.swift */; };
-		AB010000000000000000000A /* PNM.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000A /* PNM.swift */; };
 		AB010000000000000000000B /* ScanLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000B /* ScanLibrary.swift */; };
 		AB010000000000000000000C /* ScanToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000C /* ScanToast.swift */; };
 		AB010000000000000000000D /* ScannerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000D /* ScannerEngine.swift */; };
 		AB010000000000000000000E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000E /* SettingsView.swift */; };
 		AB010000000000000000000F /* SnapScanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000F /* SnapScanApp.swift */; };
 		AB0100000000000000000010 /* USBWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000010 /* USBWatcher.swift */; };
+		AB0100000000000000000011 /* SaneSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000011 /* SaneSession.swift */; };
+		AB0100000000000000000012 /* FrameImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000012 /* FrameImage.swift */; };
+		AB0200000000000000000006 /* FrameImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000006 /* FrameImageTests.swift */; };
+		AB0600000000000000000001 /* SANE.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF0600000000000000000001 /* SANE.xcframework */; };
+		AB0600000000000000000002 /* SANE.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AF0600000000000000000001 /* SANE.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		AB0200000000000000000001 /* FileNameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000001 /* FileNameTests.swift */; };
 		AB0200000000000000000002 /* OrientationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000002 /* OrientationTests.swift */; };
 		AB0200000000000000000003 /* PDFBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000003 /* PDFBuilderTests.swift */; };
-		AB0200000000000000000004 /* PNMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000004 /* PNMTests.swift */; };
-		AB0200000000000000000005 /* SensorParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000005 /* SensorParseTests.swift */; };
 		AB0300000000000000000001 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF0300000000000000000001 /* IOKit.framework */; };
 /* End PBXBuildFile section */
 
@@ -51,18 +53,19 @@
 		AF0100000000000000000007 /* OrientationDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationDetector.swift; sourceTree = "<group>"; };
 		AF0100000000000000000008 /* PDFBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFBuilder.swift; sourceTree = "<group>"; };
 		AF0100000000000000000009 /* PDFPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPreview.swift; sourceTree = "<group>"; };
-		AF010000000000000000000A /* PNM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PNM.swift; sourceTree = "<group>"; };
 		AF010000000000000000000B /* ScanLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanLibrary.swift; sourceTree = "<group>"; };
 		AF010000000000000000000C /* ScanToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanToast.swift; sourceTree = "<group>"; };
 		AF010000000000000000000D /* ScannerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerEngine.swift; sourceTree = "<group>"; };
 		AF010000000000000000000E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AF010000000000000000000F /* SnapScanApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapScanApp.swift; sourceTree = "<group>"; };
 		AF0100000000000000000010 /* USBWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBWatcher.swift; sourceTree = "<group>"; };
+		AF0100000000000000000011 /* SaneSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaneSession.swift; sourceTree = "<group>"; };
+		AF0100000000000000000012 /* FrameImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameImage.swift; sourceTree = "<group>"; };
+		AF0200000000000000000006 /* FrameImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameImageTests.swift; sourceTree = "<group>"; };
+		AF0600000000000000000001 /* SANE.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = SANE.xcframework; sourceTree = "<group>"; };
 		AF0200000000000000000001 /* FileNameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileNameTests.swift; sourceTree = "<group>"; };
 		AF0200000000000000000002 /* OrientationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationTests.swift; sourceTree = "<group>"; };
 		AF0200000000000000000003 /* PDFBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFBuilderTests.swift; sourceTree = "<group>"; };
-		AF0200000000000000000004 /* PNMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PNMTests.swift; sourceTree = "<group>"; };
-		AF0200000000000000000005 /* SensorParseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorParseTests.swift; sourceTree = "<group>"; };
 		AF0300000000000000000001 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
 		AF0400000000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AF0400000000000000000002 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
@@ -76,6 +79,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB0300000000000000000001 /* IOKit.framework in Frameworks */,
+				AB0600000000000000000001 /* SANE.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -109,9 +113,10 @@
 				AF010000000000000000000B /* ScanLibrary.swift */,
 				AF0100000000000000000006 /* Models.swift */,
 				AF0100000000000000000007 /* OrientationDetector.swift */,
-				AF010000000000000000000A /* PNM.swift */,
 				AF0100000000000000000008 /* PDFBuilder.swift */,
 				AF0100000000000000000010 /* USBWatcher.swift */,
+				AF0100000000000000000011 /* SaneSession.swift */,
+				AF0100000000000000000012 /* FrameImage.swift */,
 				AF0100000000000000000003 /* DragRow.swift */,
 				AF0100000000000000000009 /* PDFPreview.swift */,
 				AF010000000000000000000E /* SettingsView.swift */,
@@ -127,11 +132,10 @@
 		A20000000000000000000003 /* SnapScanTests */ = {
 			isa = PBXGroup;
 			children = (
-				AF0200000000000000000004 /* PNMTests.swift */,
 				AF0200000000000000000003 /* PDFBuilderTests.swift */,
 				AF0200000000000000000002 /* OrientationTests.swift */,
-				AF0200000000000000000005 /* SensorParseTests.swift */,
 				AF0200000000000000000001 /* FileNameTests.swift */,
+				AF0200000000000000000006 /* FrameImageTests.swift */,
 			);
 			name = SnapScanTests;
 			path = Tests/SnapScanTests;
@@ -150,6 +154,7 @@
 			isa = PBXGroup;
 			children = (
 				AF0300000000000000000001 /* IOKit.framework */,
+				AF0600000000000000000001 /* SANE.xcframework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -172,6 +177,7 @@
 			buildPhases = (
 				A50000000000000000000001 /* Sources */,
 				A30000000000000000000001 /* Frameworks */,
+				A90000000000000000000001 /* Embed Frameworks */,
 				A60000000000000000000001 /* Resources */,
 				A70000000000000000000001 /* Embed SANE Runtime */,
 			);
@@ -209,7 +215,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					A10000000000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
@@ -249,6 +255,20 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		A90000000000000000000001 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				AB0600000000000000000002 /* SANE.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXShellScriptBuildPhase section */
 		A70000000000000000000001 /* Embed SANE Runtime */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -282,9 +302,10 @@
 				AB010000000000000000000B /* ScanLibrary.swift in Sources */,
 				AB0100000000000000000006 /* Models.swift in Sources */,
 				AB0100000000000000000007 /* OrientationDetector.swift in Sources */,
-				AB010000000000000000000A /* PNM.swift in Sources */,
 				AB0100000000000000000008 /* PDFBuilder.swift in Sources */,
 				AB0100000000000000000010 /* USBWatcher.swift in Sources */,
+				AB0100000000000000000011 /* SaneSession.swift in Sources */,
+				AB0100000000000000000012 /* FrameImage.swift in Sources */,
 				AB0100000000000000000003 /* DragRow.swift in Sources */,
 				AB0100000000000000000009 /* PDFPreview.swift in Sources */,
 				AB010000000000000000000E /* SettingsView.swift in Sources */,
@@ -299,11 +320,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB0200000000000000000004 /* PNMTests.swift in Sources */,
 				AB0200000000000000000003 /* PDFBuilderTests.swift in Sources */,
 				AB0200000000000000000002 /* OrientationTests.swift in Sources */,
-				AB0200000000000000000005 /* SensorParseTests.swift in Sources */,
 				AB0200000000000000000001 /* FileNameTests.swift in Sources */,
+				AB0200000000000000000006 /* FrameImageTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -436,6 +456,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Support/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -458,6 +479,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Support/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

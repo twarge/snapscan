@@ -124,8 +124,7 @@ extension PaperSize: Codable {}
 
 struct ScannedPage: Identifiable {
     let id = UUID()
-    let fileURL: URL
-    let image: CGImage
+    var image: CGImage
     let dpi: Int
 
     var thumbnail: NSImage {
