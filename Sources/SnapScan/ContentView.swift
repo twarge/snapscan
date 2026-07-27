@@ -75,19 +75,19 @@ struct ContentView: View {
         switch engine.status {
         case .detecting: "Looking for scanner…"
         case .scanning(let page): "Scanning page \(page)…"
-        case .processing(let page): "Straightening page \(page)…"
         case .noScanner: "Scanner not connected"
-        case .idle: engine.scannerName ?? ""
+        case .idle:
+            engine.isProcessingAnywhere
+                ? "Straightening…"
+                : engine.scannerName ?? ""
         }
     }
 
     /// True while there is a scan session to show or name.
     private var sessionActive: Bool {
         if !engine.pages.isEmpty { return true }
-        switch engine.status {
-        case .scanning, .processing: return true
-        default: return false
-        }
+        if case .scanning = engine.status { return true }
+        return false
     }
 
     // MARK: - Sidebar
@@ -95,10 +95,13 @@ struct ContentView: View {
     private var sidebar: some View {
         ScrollView {
             LazyVStack(spacing: 2) {
-                if !engine.pages.isEmpty {
+                if sessionActive {
                     currentScanRow
                 }
-                ForEach(library.documents.filter { $0.url != engine.documentURL }) { document in
+                ForEach(engine.backgroundDocuments) { document in
+                    processingRow(document)
+                }
+                ForEach(library.documents.filter { !engine.inFlightURLs.contains($0.url) }) { document in
                     DragRow(
                         url: document.url,
                         interceptsClicks: renamingDocumentID != document.id
@@ -134,6 +137,13 @@ struct ContentView: View {
                 beginRename(document)
             }
         } else {
+            // Navigating away finalizes the active scan into a saved
+            // document — its row joins the list like any other scan.
+            // Mid-scan the session must stay open, so the current-scan row
+            // remains as the way back until the batch finishes.
+            if selection == nil, sessionActive, !engine.isBusy {
+                engine.done()
+            }
             selection = document.url
             renamePendingID = nil
             commitOrCancelRename()
@@ -211,6 +221,26 @@ struct ContentView: View {
         }
     }
 
+    /// A finalized document whose straightening/saving is still draining.
+    private func processingRow(_ document: ActiveDocument) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(document.displayName.isEmpty ? "Processing…" : document.displayName)
+                    .lineLimit(1)
+                Text("Straightening \(document.processingRemaining) page\(document.processingRemaining == 1 ? "" : "s")…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(height: 44)
+    }
+
     private func documentRow(_ document: ScanDocument, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "doc.text")
@@ -248,7 +278,7 @@ struct ContentView: View {
     private var detail: some View {
         if let selection {
             PDFPreview(url: selection)
-                .ignoresSafeArea(edges: .bottom)
+                .ignoresSafeArea()
         } else if !sessionActive {
             emptyState
         } else {
@@ -377,6 +407,15 @@ struct ContentView: View {
                             lineWidth: isSelected ? 3 : 1)
                 )
                 .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                .overlay(alignment: .bottomTrailing) {
+                    if page.isProcessing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(5)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+                            .padding(4)
+                    }
+                }
                 .onTapGesture(count: 2) { enlargedPage = page }
                 .onTapGesture {
                     let commandHeld =

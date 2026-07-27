@@ -38,7 +38,8 @@ accordingly.
 With "Combine scans into one document" on (the default), scanning again
 appends pages to the current PDF — run several batches through the feeder,
 then press **Done** to finalize; the next scan starts a new PDF. With it
-off, every batch becomes its own PDF.
+off, every batch becomes its own PDF. Selecting a previous scan in the
+sidebar also finalizes the active one — looking away commits it.
 
 A name field sits above the pages: when a new scan starts it is focused
 with the proposed name selected, so just typing and pressing return renames
@@ -85,7 +86,12 @@ the copy in `Contents/Resources/sane`.
 - `Sources/SnapScan/ScannerEngine.swift` — app-facing state machine:
   document lifecycle, direct-save, post-processing, and the hardware-button
   watch (reading the fujitsu `scan` sensor through the open handle, an
-  in-process option read instead of spawning anything).
+  in-process option read instead of spawning anything). Straightening runs
+  per page, concurrently, starting the moment each page lands (spinner on
+  the page's cell); the scanner frees as soon as the batch ends, so the
+  next scan can start while the previous document is still processing —
+  such documents appear as spinner rows in the sidebar until their final
+  PDF is written.
 - `Sources/SnapScan/OrientationDetector.swift` — auto-rotate and deskew.
   Vision's fast OCR scores 0°/180° identically (it reads flipped text as
   confident gibberish) and accurate OCR silently auto-corrects all four

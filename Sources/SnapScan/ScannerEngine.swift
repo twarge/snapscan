@@ -11,7 +11,6 @@ final class ScannerEngine {
         case idle
         case detecting
         case scanning(page: Int)
-        case processing(page: Int)
         case noScanner
     }
 
@@ -20,7 +19,6 @@ final class ScannerEngine {
     /// Live USB presence of the iX500 (event-driven via IOKit; the scanner
     /// powers its USB interface off when the feeder flap is closed).
     var scannerPresent = false
-    var pages: [ScannedPage] = []
     var lastError: String?
     var feederWasEmpty = false
 
@@ -28,23 +26,25 @@ final class ScannerEngine {
     var livePageImage: CGImage?
     var livePageFraction: Double?
 
-    /// The PDF the current pages are saved to (nil until the first batch lands).
-    var documentURL: URL?
-    /// True while the document accepts more batches; false once finalized via Done.
-    var documentOpen = false
-    /// Name (without extension) chosen for a document that hasn't been saved yet.
-    var pendingDocumentName: String?
-    /// Library identity of the current document.
-    private var currentDocumentID: UUID?
+    /// The document shown in the grid and named in the header.
+    var current: ActiveDocument?
+    /// Finalized documents whose straightening/saving is still draining.
+    var backgroundDocuments: [ActiveDocument] = []
 
     /// Fired around scans triggered by the scanner's physical button.
     var onHardwareScanStarted: (() -> Void)?
     var onHardwareScanFinished: (() -> Void)?
 
-    /// The current document's name (without extension) for display and editing.
-    var documentDisplayName: String {
-        documentURL?.deletingPathExtension().lastPathComponent
-            ?? pendingDocumentName ?? ""
+    // Bridges for views that talk about "the" document.
+    var pages: [ScannedPage] { current?.pages ?? [] }
+    var documentURL: URL? { current?.url }
+    var documentOpen: Bool { current.map { $0.isOpen && !$0.pages.isEmpty } ?? false }
+    var documentDisplayName: String { current?.displayName ?? "" }
+    /// URLs that belong to in-flight documents (hidden from the saved list).
+    var inFlightURLs: Set<URL> {
+        var documents = backgroundDocuments
+        if let current { documents.append(current) }
+        return Set(documents.compactMap(\.url))
     }
 
     var settings = ScanSettings.load() {
@@ -54,7 +54,7 @@ final class ScannerEngine {
                 configureButtonWatch()
             }
             if oldValue.appendScans, !settings.appendScans {
-                documentOpen = false
+                current?.isOpen = false
             }
         }
     }
@@ -123,11 +123,19 @@ final class ScannerEngine {
         }
     }
 
+    /// True while the scanner hardware is in use (background straightening
+    /// does not count — new scans may start over it).
     var isBusy: Bool {
         switch status {
-        case .detecting, .scanning, .processing: true
+        case .detecting, .scanning: true
         default: false
         }
+    }
+
+    /// True while any document still has pages being straightened.
+    var isProcessingAnywhere: Bool {
+        (current?.processingRemaining ?? 0) > 0
+            || backgroundDocuments.contains { $0.processingRemaining > 0 }
     }
 
     // MARK: - Detection
@@ -167,16 +175,17 @@ final class ScannerEngine {
         feederWasEmpty = false
         lastError = nil
 
-        // The previous document was finalized; a new scan starts a new one.
-        if !documentOpen, !pages.isEmpty {
-            discardSessionPages()
-            documentURL = nil
-            pendingDocumentName = nil
+        // A finalized document makes way for a new one; if it still has
+        // work draining it becomes a background "in process" row.
+        if let document = current, !document.isOpen {
+            retireCurrentDocument()
         }
-        // Propose a name up front so the UI can offer it for editing while
-        // the scan runs. A name typed before a failed attempt is kept.
-        if documentURL == nil, pendingDocumentName == nil {
-            pendingDocumentName = Self.defaultDocumentName()
+        let document: ActiveDocument
+        if let existing = current {
+            document = existing
+        } else {
+            document = ActiveDocument(pendingName: Self.defaultDocumentName())
+            current = document
         }
 
         if deviceID == nil {
@@ -184,16 +193,15 @@ final class ScannerEngine {
             guard deviceID != nil else { return }
         }
 
-        let firstPageIndex = pages.count
-        status = .scanning(page: firstPageIndex + 1)
+        status = .scanning(page: document.pages.count + 1)
         let currentSettings = settings
 
         do {
             let result = try await SaneSession.shared.scanBatch(
                 settings: currentSettings,
-                startingAtPage: firstPageIndex
+                startingAtPage: document.pages.count
             ) { [weak self] event in
-                Task { @MainActor in self?.handleBatchEvent(event) }
+                Task { @MainActor in self?.handleBatchEvent(event, for: document) }
             }
             livePageImage = nil
             livePageFraction = nil
@@ -206,16 +214,23 @@ final class ScannerEngine {
             lastError = error.localizedDescription
         }
 
-        await postProcessPages(startingAt: firstPageIndex)
-
-        if pages.count > firstPageIndex {
-            saveDocument()
-            documentOpen = settings.appendScans
+        if !document.pages.isEmpty {
+            // Save now with whatever images exist (crash-safe); straightened
+            // pages trigger a rewrite as they drain.
+            save(document)
+            if document.processingRemaining > 0 {
+                document.needsFinalSave = true
+            }
+            if !settings.appendScans {
+                document.isOpen = false
+            }
         }
         status = .idle
     }
 
-    private func handleBatchEvent(_ event: SaneSession.BatchEvent) {
+    private func handleBatchEvent(
+        _ event: SaneSession.BatchEvent, for document: ActiveDocument
+    ) {
         switch event {
         case .pageStarted(let index):
             status = .scanning(page: index + 1)
@@ -225,23 +240,31 @@ final class ScannerEngine {
             livePageImage = image
             livePageFraction = fraction
         case .pageComplete(_, let image):
-            pages.append(ScannedPage(image: image, dpi: settings.resolution))
+            var page = ScannedPage(image: image, dpi: settings.resolution)
+            let wantsProcessing = settings.autoRotate || settings.deskew
+            page.isProcessing = wantsProcessing
+            document.pages.append(page)
             livePageImage = nil
             livePageFraction = nil
+            if wantsProcessing {
+                startProcessing(pageID: page.id, in: document)
+            }
         }
     }
 
-    /// Straightens/rotates freshly scanned pages in place. The raw pages are
-    /// already visible in the grid; corrections swap in as they finish.
-    private func postProcessPages(startingAt firstIndex: Int) async {
-        guard settings.autoRotate || settings.deskew else { return }
+    /// Straightens one page concurrently; the grid shows a spinner on the
+    /// page's cell meanwhile. Scanning (even of the next document) continues.
+    private func startProcessing(pageID: UUID, in document: ActiveDocument) {
+        document.processingRemaining += 1
         let autoRotate = settings.autoRotate
         let deskew = settings.deskew
-        var index = firstIndex
-        while index < pages.count {
-            status = .processing(page: index + 1)
-            let original = pages[index].image
-            let corrected = await Task.detached(priority: .userInitiated) {
+        guard let original = document.pages.first(where: { $0.id == pageID })?.image
+        else {
+            document.processingRemaining -= 1
+            return
+        }
+        Task { @MainActor in
+            let corrected = await Task.detached(priority: .utility) {
                 var image = original
                 if autoRotate {
                     let rotation = OrientationDetector.rotationToUpright(for: image)
@@ -257,11 +280,39 @@ final class ScannerEngine {
                 }
                 return image
             }.value
-            if index < pages.count {
-                pages[index].image = corrected
+
+            if let index = document.pages.firstIndex(where: { $0.id == pageID }) {
+                document.pages[index].image = corrected
+                document.pages[index].isProcessing = false
             }
-            index += 1
+            document.processingRemaining -= 1
+            self.processingDrained(for: document)
         }
+    }
+
+    private func processingDrained(for document: ActiveDocument) {
+        guard document.processingRemaining == 0 else { return }
+        if document.needsFinalSave {
+            document.needsFinalSave = false
+            save(document)
+        }
+        if document.isRetired {
+            backgroundDocuments.removeAll { $0.id == document.id }
+            ScanLibrary.shared.refresh()
+        }
+    }
+
+    /// Moves the current document out of the way; it lingers as a background
+    /// row while straightening or saving is still pending.
+    private func retireCurrentDocument() {
+        guard let document = current else { return }
+        document.isOpen = false
+        document.isRetired = true
+        if document.processingRemaining > 0 || document.needsFinalSave {
+            backgroundDocuments.append(document)
+        }
+        current = nil
+        ScanLibrary.shared.refresh()
     }
 
     func cancelScan() {
@@ -270,32 +321,27 @@ final class ScannerEngine {
 
     /// Finalizes the current document: the next scan starts a new PDF.
     func done() {
-        discardSessionPages()
-        documentURL = nil
-        documentOpen = false
-        pendingDocumentName = nil
-        currentDocumentID = nil
+        retireCurrentDocument()
         feederWasEmpty = false
         lastError = nil
     }
 
     /// Renames the current document (on disk once it exists).
     func renameDocument(to rawName: String) {
+        guard let document = current else { return }
         let cleaned = Self.sanitizeFileName(rawName)
         guard !cleaned.isEmpty else { return }
-        guard let current = documentURL else {
-            pendingDocumentName = cleaned
+        guard let currentURL = document.url else {
+            document.pendingName = cleaned
             return
         }
-        guard cleaned != current.deletingPathExtension().lastPathComponent else { return }
+        guard cleaned != currentURL.deletingPathExtension().lastPathComponent else { return }
         let destination = uniqueDocumentURL(
-            in: current.deletingLastPathComponent(), base: cleaned)
+            in: currentURL.deletingLastPathComponent(), base: cleaned)
         do {
-            try FileManager.default.moveItem(at: current, to: destination)
-            documentURL = destination
-            if let currentDocumentID {
-                ScanLibrary.shared.noteSaved(id: currentDocumentID, url: destination)
-            }
+            try FileManager.default.moveItem(at: currentURL, to: destination)
+            document.url = destination
+            ScanLibrary.shared.noteSaved(id: document.id, url: destination)
         } catch {
             lastError = "Couldn't rename: \(error.localizedDescription)"
         }
@@ -312,33 +358,27 @@ final class ScannerEngine {
 
     // MARK: - Document persistence
 
-    /// Writes/rewrites the current document PDF in the destination folder.
-    private func saveDocument() {
-        guard !pages.isEmpty else { return }
+    /// Writes/rewrites a document's PDF in the destination folder.
+    private func save(_ document: ActiveDocument) {
+        guard !document.pages.isEmpty else { return }
         do {
             let directory = settings.destinationURL
             try FileManager.default.createDirectory(
                 at: directory, withIntermediateDirectories: true)
-            if documentURL == nil {
-                let base = pendingDocumentName ?? Self.defaultDocumentName()
-                documentURL = uniqueDocumentURL(in: directory, base: base)
-                pendingDocumentName = nil
+            if document.url == nil {
+                let base = document.pendingName ?? Self.defaultDocumentName()
+                document.url = uniqueDocumentURL(in: directory, base: base)
+                document.pendingName = nil
             }
-            guard let documentURL else { return }
-            let staging = sessionDirectory.appendingPathComponent("staging.pdf")
-            try PDFBuilder.write(pages: pages, to: staging)
-            if FileManager.default.fileExists(atPath: documentURL.path) {
-                _ = try FileManager.default.replaceItemAt(documentURL, withItemAt: staging)
+            guard let url = document.url else { return }
+            let staging = sessionDirectory.appendingPathComponent("staging-\(document.id).pdf")
+            try PDFBuilder.write(pages: document.pages, to: staging)
+            if FileManager.default.fileExists(atPath: url.path) {
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: staging)
             } else {
-                try FileManager.default.moveItem(at: staging, to: documentURL)
+                try FileManager.default.moveItem(at: staging, to: url)
             }
-            if let currentDocumentID {
-                ScanLibrary.shared.noteSaved(id: currentDocumentID, url: documentURL)
-            } else {
-                let id = UUID()
-                currentDocumentID = id
-                ScanLibrary.shared.add(id: id, url: documentURL)
-            }
+            ScanLibrary.shared.noteSaved(id: document.id, url: url)
         } catch {
             lastError = "Couldn't save PDF: \(error.localizedDescription)"
         }
@@ -362,12 +402,8 @@ final class ScannerEngine {
 
     /// Called when the user drags the current document's file out of the folder.
     func documentWasMoved(_ url: URL) {
-        guard url == documentURL else { return }
-        discardSessionPages()
-        documentURL = nil
-        documentOpen = false
-        pendingDocumentName = nil
-        currentDocumentID = nil
+        guard let document = current, document.url == url else { return }
+        current = nil
     }
 
     // MARK: - Page management
@@ -377,27 +413,20 @@ final class ScannerEngine {
     }
 
     func deletePages(withIDs ids: Set<UUID>) {
-        guard !isBusy else { return }
-        let countBefore = pages.count
-        pages.removeAll { ids.contains($0.id) }
-        guard pages.count != countBefore else { return }
-        if pages.isEmpty {
+        guard !isBusy, let document = current else { return }
+        let countBefore = document.pages.count
+        document.pages.removeAll { ids.contains($0.id) }
+        guard document.pages.count != countBefore else { return }
+        if document.pages.isEmpty {
             // All content removed: the document no longer has meaning.
-            if let documentURL {
-                try? FileManager.default.removeItem(at: documentURL)
+            if let url = document.url {
+                try? FileManager.default.removeItem(at: url)
             }
-            documentURL = nil
-            documentOpen = false
-            pendingDocumentName = nil
-            currentDocumentID = nil
+            current = nil
             ScanLibrary.shared.refresh()
         } else {
-            saveDocument()
+            save(document)
         }
-    }
-
-    private func discardSessionPages() {
-        pages.removeAll()
     }
 
     // MARK: - Hardware button watch

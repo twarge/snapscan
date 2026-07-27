@@ -61,7 +61,9 @@ struct SnapScanApp: App {
     private let engine = ScannerEngine.shared
 
     var body: some Scene {
-        WindowGroup(id: "main") {
+        // A single-instance Window (not WindowGroup): one scanner, one
+        // session — this also removes File > New Window.
+        Window("SnapScan", id: "main") {
             ContentView()
                 .environment(engine)
         }

@@ -109,14 +109,18 @@ struct MenuBarPanelView: View {
     @ViewBuilder
     private var statusIcon: some View {
         switch engine.status {
-        case .detecting, .scanning, .processing:
+        case .detecting, .scanning:
             ProgressView().controlSize(.small)
         case .noScanner:
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
         case .idle:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+            if engine.isProcessingAnywhere {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
         }
     }
 
@@ -124,9 +128,11 @@ struct MenuBarPanelView: View {
         switch engine.status {
         case .detecting: "Looking for scanner…"
         case .scanning(let page): "Scanning page \(page)…"
-        case .processing(let page): "Straightening page \(page)…"
         case .noScanner: "Scanner not found"
-        case .idle: engine.scannerName ?? "Ready"
+        case .idle:
+            engine.isProcessingAnywhere
+                ? "Straightening…"
+                : engine.scannerName ?? "Ready"
         }
     }
 }

@@ -122,10 +122,43 @@ extension ScanSource: Codable {}
 extension ScanMode: Codable {}
 extension PaperSize: Codable {}
 
+/// A document being produced: pages accumulate while scanning, straighten in
+/// the background, and the PDF (re)saves as work completes. Lives as the
+/// engine's `current` document while visible in the grid, then — if work is
+/// still pending when a new scan starts — as a background "in process" row
+/// until its last page is straightened and the final PDF is written.
+@MainActor
+@Observable
+final class ActiveDocument: Identifiable {
+    /// Also the document's identity in the scan library.
+    let id = UUID()
+    var pages: [ScannedPage] = []
+    var url: URL?
+    var pendingName: String?
+    /// Accepts more batches (combine mode, not yet finalized).
+    var isOpen = true
+    /// No longer the current document; discard once work drains.
+    var isRetired = false
+    /// Pages still being straightened.
+    var processingRemaining = 0
+    /// A save should run when processing drains.
+    var needsFinalSave = false
+
+    var displayName: String {
+        url?.deletingPathExtension().lastPathComponent ?? pendingName ?? ""
+    }
+
+    init(pendingName: String? = nil) {
+        self.pendingName = pendingName
+    }
+}
+
 struct ScannedPage: Identifiable {
     let id = UUID()
     var image: CGImage
     let dpi: Int
+    /// True while the page is being auto-rotated/straightened in the background.
+    var isProcessing = false
 
     var thumbnail: NSImage {
         NSImage(cgImage: image, size: sizeInPoints)

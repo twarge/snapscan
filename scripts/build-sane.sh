@@ -8,6 +8,10 @@ PREFIX="$REPO/vendor"
 SRC="$PREFIX/src"
 JOBS="$(sysctl -n hw.ncpu)"
 
+# Match the app's deployment target so the linker doesn't warn about
+# dylibs built for a newer macOS than the app targets.
+export MACOSX_DEPLOYMENT_TARGET=14.0
+
 LIBUSB_VER=1.0.27
 LIBUSB_URL="https://github.com/libusb/libusb/releases/download/v${LIBUSB_VER}/libusb-${LIBUSB_VER}.tar.bz2"
 SANE_VER=1.4.0

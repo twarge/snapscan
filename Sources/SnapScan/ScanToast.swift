@@ -150,11 +150,14 @@ struct ScanToastView: View {
     private var title: String {
         switch engine.status {
         case .scanning(let page): "Scanning page \(page)…"
-        case .processing(let page): "Straightening page \(page)…"
         default:
-            engine.feederWasEmpty
-                ? "The feeder was empty"
-                : "\(engine.pages.count) page\(engine.pages.count == 1 ? "" : "s") scanned"
+            if engine.feederWasEmpty {
+                "The feeder was empty"
+            } else if (engine.current?.processingRemaining ?? 0) > 0 {
+                "Straightening \(engine.pages.count) page\(engine.pages.count == 1 ? "" : "s")…"
+            } else {
+                "\(engine.pages.count) page\(engine.pages.count == 1 ? "" : "s") scanned"
+            }
         }
     }
 
