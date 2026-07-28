@@ -160,7 +160,8 @@ actor SaneSession {
             return
         }
         var mutable = value
-        let status = sane_control_option(handle, index, SANE_ACTION_SET_VALUE, &mutable, nil)
+        var info: SANE_Int = 0
+        let status = sane_control_option(handle, index, SANE_ACTION_SET_VALUE, &mutable, &info)
         if status != SANE_STATUS_GOOD {
             Self.logger.warning(
                 "set \(name, privacy: .public)=\(value) failed: \(status.rawValue)")
@@ -169,6 +170,12 @@ actor SaneSession {
             // comes out shorter than requested.
             Self.logger.notice(
                 "set \(name, privacy: .public): requested \(value), backend used \(mutable)")
+        }
+        // Setting some options (source, mode, ald, …) makes the backend
+        // reload its option table: indices and constraints may change, and
+        // geometry values can reset. Rebuild our index so later sets land.
+        if info & SANE_Int(SANE_INFO_RELOAD_OPTIONS) != 0 {
+            buildOptionIndex()
         }
     }
 
@@ -208,15 +215,14 @@ actor SaneSession {
         guard handle != nil else { throw SaneError.notOpen }
         let paper = settings.paperSize.millimeters
         let auto = settings.paperSize == .auto
+
+        // Mode-changing options FIRST: source, mode, resolution, and ald all
+        // trigger option reloads that reset geometry to defaults. Setting
+        // geometry before ald is how a 876mm request silently became letter
+        // length (and a "jam" when the paper kept going).
         setOption(SANE_NAME_SCAN_SOURCE, string: settings.source.rawValue)
         setOption(SANE_NAME_SCAN_MODE, string: settings.mode.rawValue)
         setOption(SANE_NAME_SCAN_RESOLUTION, int: SANE_Int(settings.resolution))
-        setOption("page-width", fixedMillimeters: paper.width)
-        setOption("page-height", fixedMillimeters: paper.height)
-        setOption(SANE_NAME_SCAN_TL_X, fixedMillimeters: 0)
-        setOption(SANE_NAME_SCAN_TL_Y, fixedMillimeters: 0)
-        setOption(SANE_NAME_SCAN_BR_X, fixedMillimeters: paper.width)
-        setOption(SANE_NAME_SCAN_BR_Y, fixedMillimeters: paper.height)
         // Auto size: hardware detects the paper's trailing edge (the frame
         // ends there) and the black background makes the paper's width
         // detectable in post-processing.
@@ -227,6 +233,15 @@ actor SaneSession {
         // tolerate long paper. (Ultrasonic detection isn't length-based, but
         // the iX500's default profile includes length.)
         setOption("df-action", string: auto ? "Continue" : "Default")
+
+        // Geometry AFTER everything that can reset it.
+        setOption("page-width", fixedMillimeters: paper.width)
+        setOption("page-height", fixedMillimeters: paper.height)
+        setOption(SANE_NAME_SCAN_TL_X, fixedMillimeters: 0)
+        setOption(SANE_NAME_SCAN_TL_Y, fixedMillimeters: 0)
+        setOption(SANE_NAME_SCAN_BR_X, fixedMillimeters: paper.width)
+        setOption(SANE_NAME_SCAN_BR_Y, fixedMillimeters: paper.height)
+
         setOption("swcrop", bool: settings.autocrop && !auto)
         // Percentage of dark pixels below which a page is discarded as blank.
         setOption("swskip", fixedMillimeters: settings.skipBlankPages ? 1.0 : 0.0)
@@ -327,6 +342,16 @@ actor SaneSession {
                 case SANE_STATUS_CANCELLED:
                     break readLoop
                 default:
+                    // Salvage what already scanned (a jam partway down a
+                    // page shouldn't discard the page) before reporting.
+                    let rows = buffer.count / bytesPerRow
+                    if rows > 32,
+                        let partial = FrameImage.make(
+                            pixels: buffer, width: width, height: rows,
+                            bytesPerRow: bytesPerRow, format: format) {
+                        onEvent(.pageComplete(index: pageIndex, image: partial))
+                        pagesScanned += 1
+                    }
                     sane_cancel(handle)
                     throw SaneError.status(readStatus, context: "Scan failed")
                 }
