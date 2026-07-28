@@ -1,6 +1,7 @@
 import CSane
 import CoreGraphics
 import Foundation
+import os
 
 /// In-process interface to the SANE library. All blocking C calls run inside
 /// this actor; `sane_cancel` is the documented exception (async-safe from any
@@ -151,10 +152,35 @@ actor SaneSession {
 
     // MARK: - Options
 
+    private static let logger = Logger(subsystem: "com.twinleaf.snapscan", category: "sane")
+
     private func setOption(_ name: String, int value: SANE_Int) {
-        guard let handle, let index = optionIndex[name] else { return }
+        guard let handle, let index = optionIndex[name] else {
+            Self.logger.warning("option \(name, privacy: .public) not found; ignored")
+            return
+        }
         var mutable = value
-        _ = sane_control_option(handle, index, SANE_ACTION_SET_VALUE, &mutable, nil)
+        let status = sane_control_option(handle, index, SANE_ACTION_SET_VALUE, &mutable, nil)
+        if status != SANE_STATUS_GOOD {
+            Self.logger.warning(
+                "set \(name, privacy: .public)=\(value) failed: \(status.rawValue)")
+        } else if mutable != value {
+            // The backend clamped the value — worth knowing when a scan
+            // comes out shorter than requested.
+            Self.logger.notice(
+                "set \(name, privacy: .public): requested \(value), backend used \(mutable)")
+        }
+    }
+
+    /// Reads a fixed-point option back in millimeters (for diagnostics).
+    func readFixedOption(_ name: String) -> Double? {
+        guard let handle, let index = optionIndex[name] else { return nil }
+        var value: SANE_Int = 0
+        guard
+            sane_control_option(handle, index, SANE_ACTION_GET_VALUE, &value, nil)
+                == SANE_STATUS_GOOD
+        else { return nil }
+        return Double(value) / 65536.0
     }
 
     private func setOption(_ name: String, fixedMillimeters value: Double) {
@@ -196,9 +222,21 @@ actor SaneSession {
         // detectable in post-processing.
         setOption("ald", bool: auto)
         setOption("bgcolor", string: auto ? "Black" : "Default")
+        // Length-based double-feed detection reads a long document as two
+        // overlapping pages and aborts around letter length; auto mode must
+        // tolerate long paper. (Ultrasonic detection isn't length-based, but
+        // the iX500's default profile includes length.)
+        setOption("df-action", string: auto ? "Continue" : "Default")
         setOption("swcrop", bool: settings.autocrop && !auto)
         // Percentage of dark pixels below which a page is discarded as blank.
         setOption("swskip", fixedMillimeters: settings.skipBlankPages ? 1.0 : 0.0)
+
+        if auto {
+            let appliedBRY = readFixedOption("br-y") ?? 0
+            let appliedPageHeight = readFixedOption("page-height") ?? 0
+            Self.logger.info(
+                "auto scan area: br-y=\(appliedBRY)mm page-height=\(appliedPageHeight)mm")
+        }
     }
 
     /// Reads a hardware sensor (e.g. the Scan button) as a boolean.

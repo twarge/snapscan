@@ -47,7 +47,10 @@ nonisolated enum PaperSize: String, CaseIterable, Identifiable {
     /// plus content-bounds cropping to find the real page.
     var millimeters: (width: Double, height: Double) {
         switch self {
-        case .auto: (215.872, 500.0)
+        // Auto: the backend's maximum length — hardware length detection
+        // ends the frame at the paper's real edge, so requesting the
+        // maximum costs nothing and long receipts fit.
+        case .auto: (215.872, 876.0)
         case .letter: (215.872, 279.4)
         case .a4: (210.0, 297.0)
         case .legal: (215.872, 355.6)
