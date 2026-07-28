@@ -241,7 +241,8 @@ final class ScannerEngine {
             livePageFraction = fraction
         case .pageComplete(_, let image):
             var page = ScannedPage(image: image, dpi: settings.resolution)
-            let wantsProcessing = settings.autoRotate || settings.deskew
+            let wantsProcessing =
+                settings.autoRotate || settings.deskew || settings.paperSize == .auto
             page.isProcessing = wantsProcessing
             document.pages.append(page)
             livePageImage = nil
@@ -252,38 +253,56 @@ final class ScannerEngine {
         }
     }
 
-    /// Straightens one page concurrently; the grid shows a spinner on the
-    /// page's cell meanwhile. Scanning (even of the next document) continues.
+    /// Straightens (and in auto size mode, crops and size-snaps) one page
+    /// concurrently; the grid shows a spinner on the page's cell meanwhile.
+    /// Scanning (even of the next document) continues.
     private func startProcessing(pageID: UUID, in document: ActiveDocument) {
         document.processingRemaining += 1
         let autoRotate = settings.autoRotate
         let deskew = settings.deskew
+        let autoSize = settings.paperSize == .auto
+        let dpi = settings.resolution
         guard let original = document.pages.first(where: { $0.id == pageID })?.image
         else {
             document.processingRemaining -= 1
             return
         }
         Task { @MainActor in
-            let corrected = await Task.detached(priority: .utility) {
+            let result = await Task.detached(priority: .utility) {
                 var image = original
+                if autoSize, let bounds = PageGeometry.contentBounds(of: image),
+                    let cropped = image.cropping(to: bounds) {
+                    image = cropped
+                }
                 if autoRotate {
-                    let rotation = OrientationDetector.rotationToUpright(for: image)
+                    let rotation = await OrientationDetector.rotationToUpright(for: image)
                     if rotation != 0,
                         let rotated = image.rotated(byDegreesClockwise: rotation) {
                         image = rotated
                     }
                 }
                 if deskew,
-                    let angle = OrientationDetector.skewCorrectionDegrees(for: image),
+                    let angle = await OrientationDetector.skewCorrectionDegrees(for: image),
                     let straightened = image.rotatedBySmallAngle(degreesClockwise: angle) {
                     image = straightened
                 }
-                return image
+                // Snap after all rotations so the measured orientation is final.
+                var snapped: (name: String, widthMM: Double, heightMM: Double)? = nil
+                if autoSize {
+                    snapped = PageGeometry.snappedSize(
+                        widthMM: Double(image.width) / Double(dpi) * 25.4,
+                        heightMM: Double(image.height) / Double(dpi) * 25.4)
+                }
+                return (image: image, snapped: snapped)
             }.value
 
             if let index = document.pages.firstIndex(where: { $0.id == pageID }) {
-                document.pages[index].image = corrected
+                document.pages[index].image = result.image
                 document.pages[index].isProcessing = false
+                document.pages[index].snappedSizeName = result.snapped?.name
+                document.pages[index].snappedSizeMM = result.snapped.map {
+                    CGSize(width: $0.widthMM, height: $0.heightMM)
+                }
             }
             document.processingRemaining -= 1
             self.processingDrained(for: document)

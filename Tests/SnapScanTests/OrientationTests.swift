@@ -1,9 +1,9 @@
 import AppKit
-import XCTest
+import Testing
 
 @testable import SnapScan
 
-final class OrientationTests: XCTestCase {
+@Suite struct OrientationTests {
     // MARK: Rotation primitive
 
     /// 2x1 image, black pixel left, white pixel right.
@@ -33,28 +33,28 @@ final class OrientationTests: XCTestCase {
         return buffer
     }
 
-    func testRotate90ClockwiseMovesLeftPixelToTop() throws {
+    @Test func rotate90ClockwiseMovesLeftPixelToTop() throws {
         // [black | white] rotated 90° CW should become [black] on top of [white]
         // (the left edge becomes the top edge).
-        let rotated = try XCTUnwrap(makeTwoPixelImage().rotated(byDegreesClockwise: 90))
-        XCTAssertEqual(rotated.width, 1)
-        XCTAssertEqual(rotated.height, 2)
+        let rotated = try #require(makeTwoPixelImage().rotated(byDegreesClockwise: 90))
+        #expect(rotated.width == 1)
+        #expect(rotated.height == 2)
         let pixels = grayPixels(of: rotated)
-        XCTAssertLessThan(pixels[0], 64, "top pixel should be black")
-        XCTAssertGreaterThan(pixels[1], 192, "bottom pixel should be white")
+        #expect(pixels[0] < 64, "top pixel should be black")
+        #expect(pixels[1] > 192, "bottom pixel should be white")
     }
 
-    func testRotate180Reverses() throws {
-        let rotated = try XCTUnwrap(makeTwoPixelImage().rotated(byDegreesClockwise: 180))
+    @Test func rotate180Reverses() throws {
+        let rotated = try #require(makeTwoPixelImage().rotated(byDegreesClockwise: 180))
         let pixels = grayPixels(of: rotated)
-        XCTAssertGreaterThan(pixels[0], 192, "left pixel should now be white")
-        XCTAssertLessThan(pixels[1], 64, "right pixel should now be black")
+        #expect(pixels[0] > 192, "left pixel should now be white")
+        #expect(pixels[1] < 64, "right pixel should now be black")
     }
 
-    func testRotateZeroReturnsSameImage() {
+    @Test func rotateZeroReturnsSameImage() {
         let image = makeTwoPixelImage()
-        XCTAssertTrue(image.rotated(byDegreesClockwise: 0) === image)
-        XCTAssertTrue(image.rotated(byDegreesClockwise: 360) === image)
+        #expect(image.rotated(byDegreesClockwise: 0) === image)
+        #expect(image.rotated(byDegreesClockwise: 360) === image)
     }
 
     // MARK: Orientation detection on rendered text
@@ -91,45 +91,59 @@ final class OrientationTests: XCTestCase {
         return context.makeImage()!
     }
 
-    func testUprightTextNeedsNoRotation() {
-        XCTAssertEqual(OrientationDetector.rotationToUpright(for: renderTextPage()), 0)
+    @Test func uprightTextNeedsNoRotation() async {
+        let rotation = await OrientationDetector.rotationToUpright(for: renderTextPage())
+        #expect(rotation == 0)
     }
 
-    func testDetectsQuarterAndHalfRotations() throws {
-        let upright = renderTextPage()
-        for applied in [90, 180, 270] {
-            let rotated = try XCTUnwrap(upright.rotated(byDegreesClockwise: applied))
-            let correction = OrientationDetector.rotationToUpright(for: rotated)
-            XCTAssertEqual(
-                (applied + correction) % 360, 0,
-                "page rotated \(applied)° should need \(360 - applied)° correction, got \(correction)"
-            )
-        }
+    @Test(arguments: [90, 180, 270])
+    func detectsRotation(applied: Int) async throws {
+        let rotated = try #require(renderTextPage().rotated(byDegreesClockwise: applied))
+        let correction = await OrientationDetector.rotationToUpright(for: rotated)
+        #expect(
+            (applied + correction) % 360 == 0,
+            "page rotated \(applied)° should need \(360 - applied)° correction, got \(correction)"
+        )
+    }
+
+    @Test func blankPageIsLeftAlone() async {
+        let width = 400
+        let height = 400
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let blank = context.makeImage()!
+        let rotation = await OrientationDetector.rotationToUpright(for: blank)
+        #expect(rotation == 0)
     }
 
     // MARK: Deskew
 
-    func testSkewEstimateAndCorrectionRoundTrip() throws {
+    @Test func skewEstimateAndCorrectionRoundTrip() async throws {
         let upright = renderTextPage()
-        let skewed = try XCTUnwrap(upright.rotatedBySmallAngle(degreesClockwise: 2.0))
-        let correction = try XCTUnwrap(
-            OrientationDetector.skewCorrectionDegrees(for: skewed),
+        let skewed = try #require(upright.rotatedBySmallAngle(degreesClockwise: 2.0))
+        let correction = try #require(
+            await OrientationDetector.skewCorrectionDegrees(for: skewed),
             "a clearly skewed text page should produce an estimate")
-        XCTAssertEqual(abs(correction), 2.0, accuracy: 0.7)
+        #expect(abs(abs(correction) - 2.0) < 0.7)
 
-        let fixed = try XCTUnwrap(skewed.rotatedBySmallAngle(degreesClockwise: correction))
-        let residual = OrientationDetector.skewCorrectionDegrees(for: fixed)
-        XCTAssertTrue(
+        let fixed = try #require(skewed.rotatedBySmallAngle(degreesClockwise: correction))
+        let residual = await OrientationDetector.skewCorrectionDegrees(for: fixed)
+        #expect(
             residual == nil || abs(residual!) < 0.5,
             "applying the correction should leave the page straight, got \(String(describing: residual))"
         )
     }
 
-    func testStraightPageNotDeskewed() {
-        XCTAssertNil(OrientationDetector.skewCorrectionDegrees(for: renderTextPage()))
+    @Test func straightPageNotDeskewed() async {
+        let estimate = await OrientationDetector.skewCorrectionDegrees(for: renderTextPage())
+        #expect(estimate == nil)
     }
 
-    func testSparsePageNotDeskewed() throws {
+    @Test func sparsePageNotDeskewed() async throws {
         // A mostly blank page with one short line: too little evidence to act.
         let width = 600
         let height = 800
@@ -150,22 +164,8 @@ final class OrientationTests: XCTestCase {
         ).draw(at: NSPoint(x: 60, y: 700))
         NSGraphicsContext.restoreGraphicsState()
         let sparse = context.makeImage()!
-        let skewedSparse = try XCTUnwrap(sparse.rotatedBySmallAngle(degreesClockwise: 2.5))
-        XCTAssertNil(
-            OrientationDetector.skewCorrectionDegrees(for: skewedSparse),
-            "sparse pages must be left alone even when actually skewed")
-    }
-
-    func testBlankPageIsLeftAlone() {
-        let width = 400
-        let height = 400
-        let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8,
-            bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue)!
-        context.setFillColor(gray: 1, alpha: 1)
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        let blank = context.makeImage()!
-        XCTAssertEqual(OrientationDetector.rotationToUpright(for: blank), 0)
+        let skewedSparse = try #require(sparse.rotatedBySmallAngle(degreesClockwise: 2.5))
+        let estimate = await OrientationDetector.skewCorrectionDegrees(for: skewedSparse)
+        #expect(estimate == nil, "sparse pages must be left alone even when actually skewed")
     }
 }

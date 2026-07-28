@@ -3,7 +3,7 @@ import Foundation
 
 /// Builds CGImages from raw scanner frame data (as delivered by sane_read).
 /// Also used to assemble partial pages from however many rows have arrived.
-enum FrameImage {
+nonisolated enum FrameImage {
     enum PixelFormat {
         /// 8-bit grayscale, one byte per pixel.
         case gray8

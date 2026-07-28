@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import Foundation
 import PackageDescription
 
@@ -8,13 +8,16 @@ let packageDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().pat
 
 let package = Package(
     name: "SnapScan",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     targets: [
         .systemLibrary(name: "CSane", path: "Sources/CSane"),
         .executableTarget(
             name: "SnapScan",
             dependencies: ["CSane"],
             path: "Sources/SnapScan",
+            swiftSettings: [
+                .defaultIsolation(MainActor.self)
+            ],
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .unsafeFlags(["-L\(packageDir)/vendor/lib", "-lsane"]),
@@ -32,6 +35,9 @@ let package = Package(
             name: "SnapScanTests",
             dependencies: ["SnapScan"],
             path: "Tests/SnapScanTests",
+            swiftSettings: [
+                .defaultIsolation(MainActor.self)
+            ],
             linkerSettings: [
                 .unsafeFlags(["-L\(packageDir)/vendor/lib", "-lsane"])
             ]

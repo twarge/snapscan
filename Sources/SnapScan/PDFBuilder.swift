@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-enum PDFBuilder {
+nonisolated enum PDFBuilder {
     enum BuildError: Error, LocalizedError {
         case contextCreationFailed
 
@@ -27,7 +27,15 @@ enum PDFBuilder {
             ]
             context.beginPDFPage(pageInfo as CFDictionary)
             context.interpolationQuality = .high
-            context.draw(page.image, in: mediaBox)
+            // A size-snapped page centers the image at true scale; detection
+            // noise disappears into the margins instead of stretching pixels.
+            let imageSize = page.naturalSizeInPoints
+            let drawRect = CGRect(
+                x: (mediaBox.width - imageSize.width) / 2,
+                y: (mediaBox.height - imageSize.height) / 2,
+                width: imageSize.width,
+                height: imageSize.height)
+            context.draw(page.image, in: drawRect)
             context.endPDFPage()
         }
         context.closePDF()

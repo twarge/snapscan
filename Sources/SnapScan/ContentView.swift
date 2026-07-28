@@ -431,7 +431,7 @@ struct ContentView: View {
                     }
                     gridFocused = true
                 }
-            Text("Page \(number)")
+            Text("Page \(number)" + (page.snappedSizeName.map { " · \($0)" } ?? ""))
                 .font(.caption)
                 .foregroundStyle(isSelected ? .primary : .secondary)
         }

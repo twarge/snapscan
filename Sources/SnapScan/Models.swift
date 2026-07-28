@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-enum ScanSource: String, CaseIterable, Identifiable {
+nonisolated enum ScanSource: String, CaseIterable, Identifiable {
     case duplex = "ADF Duplex"
     case front = "ADF Front"
     case back = "ADF Back"
@@ -17,7 +17,7 @@ enum ScanSource: String, CaseIterable, Identifiable {
     }
 }
 
-enum ScanMode: String, CaseIterable, Identifiable {
+nonisolated enum ScanMode: String, CaseIterable, Identifiable {
     case color = "Color"
     case gray = "Gray"
     case lineart = "Lineart"
@@ -33,17 +33,21 @@ enum ScanMode: String, CaseIterable, Identifiable {
     }
 }
 
-enum PaperSize: String, CaseIterable, Identifiable {
+nonisolated enum PaperSize: String, CaseIterable, Identifiable {
+    case auto = "Auto"
     case letter = "Letter"
     case a4 = "A4"
     case legal = "Legal"
 
     var id: String { rawValue }
 
-    /// Width and height in millimeters, as expected by scanimage geometry options.
-    /// Values are clamped to the iX500's maximum scan width (215.872 mm).
+    /// Scan-area width and height in millimeters. Values are clamped to the
+    /// iX500's maximum scan width (215.872 mm). Auto acquires oversized —
+    /// full width, generous length — and relies on hardware length detection
+    /// plus content-bounds cropping to find the real page.
     var millimeters: (width: Double, height: Double) {
         switch self {
+        case .auto: (215.872, 500.0)
         case .letter: (215.872, 279.4)
         case .a4: (210.0, 297.0)
         case .legal: (215.872, 355.6)
@@ -51,7 +55,7 @@ enum PaperSize: String, CaseIterable, Identifiable {
     }
 }
 
-struct ScanSettings: Codable {
+nonisolated struct ScanSettings: Codable {
     var source: ScanSource = .duplex
     var mode: ScanMode = .color
     var resolution: Int = 300
@@ -62,6 +66,9 @@ struct ScanSettings: Codable {
     var autoRotate: Bool = true
     var hardwareButton: Bool = true
     var destinationPath: String = "~/Documents/Scans"
+    /// Security-scoped bookmark for a user-chosen folder outside the sandbox
+    /// container. Typed paths can't confer sandbox access; the picker can.
+    var destinationBookmark: Data?
     var appendScans: Bool = true
     var menuBarOnly: Bool = false
     var launchAtLogin: Bool = false
@@ -69,7 +76,11 @@ struct ScanSettings: Codable {
     static let resolutions = [150, 200, 300, 400, 600]
 
     var destinationURL: URL {
-        URL(
+        if let destinationBookmark,
+            let url = DestinationAccess.shared.resolve(bookmark: destinationBookmark) {
+            return url
+        }
+        return URL(
             fileURLWithPath: (destinationPath as NSString).expandingTildeInPath,
             isDirectory: true)
     }
@@ -100,6 +111,8 @@ struct ScanSettings: Codable {
             try c.decodeIfPresent(Bool.self, forKey: .menuBarOnly) ?? defaults.menuBarOnly
         launchAtLogin =
             try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? defaults.launchAtLogin
+        destinationBookmark =
+            try c.decodeIfPresent(Data.self, forKey: .destinationBookmark)
     }
 
     private static let defaultsKey = "scanSettings"
@@ -121,6 +134,32 @@ struct ScanSettings: Codable {
 extension ScanSource: Codable {}
 extension ScanMode: Codable {}
 extension PaperSize: Codable {}
+
+/// Resolves and caches security-scoped destination folders. Each distinct
+/// bookmark starts access once for the app's lifetime (the matching stop is
+/// intentionally omitted — the grant must outlive every save).
+nonisolated final class DestinationAccess: @unchecked Sendable {
+    static let shared = DestinationAccess()
+    private let lock = NSLock()
+    private var cache: [Data: URL] = [:]
+
+    func resolve(bookmark: Data) -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = cache[bookmark] { return cached }
+        var isStale = false
+        guard
+            let url = try? URL(
+                resolvingBookmarkData: bookmark,
+                options: [.withSecurityScope, .withoutUI],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale)
+        else { return nil }
+        _ = url.startAccessingSecurityScopedResource()
+        cache[bookmark] = url
+        return url
+    }
+}
 
 /// A document being produced: pages accumulate while scanning, straighten in
 /// the background, and the PDF (re)saves as work completes. Lives as the
@@ -153,22 +192,37 @@ final class ActiveDocument: Identifiable {
     }
 }
 
-struct ScannedPage: Identifiable {
+nonisolated struct ScannedPage: Identifiable {
     let id = UUID()
     var image: CGImage
     let dpi: Int
     /// True while the page is being auto-rotated/straightened in the background.
     var isProcessing = false
+    /// Set when auto size detection snapped this page to a standard size:
+    /// the PDF page takes this size and the image is centered on it.
+    var snappedSizeName: String?
+    var snappedSizeMM: CGSize?
 
     var thumbnail: NSImage {
-        NSImage(cgImage: image, size: sizeInPoints)
+        NSImage(cgImage: image, size: naturalSizeInPoints)
     }
 
-    /// Physical page size in PDF points (1/72 inch), derived from pixel size and scan DPI.
-    var sizeInPoints: CGSize {
+    /// The image's physical size in PDF points, from pixel size and scan DPI.
+    var naturalSizeInPoints: CGSize {
         CGSize(
             width: CGFloat(image.width) * 72.0 / CGFloat(dpi),
             height: CGFloat(image.height) * 72.0 / CGFloat(dpi)
         )
+    }
+
+    /// The PDF page size: the snapped standard size when there is one,
+    /// otherwise the image's natural size.
+    var sizeInPoints: CGSize {
+        if let snappedSizeMM {
+            return CGSize(
+                width: snappedSizeMM.width / 25.4 * 72.0,
+                height: snappedSizeMM.height / 25.4 * 72.0)
+        }
+        return naturalSizeInPoints
     }
 }

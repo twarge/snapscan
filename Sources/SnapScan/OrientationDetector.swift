@@ -1,74 +1,53 @@
 import CoreGraphics
 import Vision
 
-/// Determines how a scanned page should be rotated so its text reads upright.
+/// Determines how a scanned page should be rotated so its text reads upright,
+/// and estimates small-angle skew. Uses the Swift Vision API (macOS 15+).
 ///
-/// Two-step strategy, validated empirically against Vision's behavior:
-///
-/// 1. **Axis** — fast-level recognition scores at `.up` vs `.right`. Fast OCR
-///    reads 180°-flipped text as confidently as upright text (as gibberish),
-///    so this only distinguishes horizontal from vertical text, which is all
-///    it's used for.
-/// 2. **Polarity** — one accurate-level pass at the axis orientation. Accurate
-///    recognition silently reads flipped text correctly, but its observations
-///    stay in the *given* coordinate space, so on an upside-down page the
-///    first line in reading order sits near the bottom. If reading order does
-///    not descend the page, the page is flipped and 180° is added.
+/// Strategy, validated empirically against this API's behavior: accurate
+/// recognition silently reads text at any rotation, but its observation quads
+/// stay in the *given* coordinate space with text-semantic corners. The
+/// median direction of the lines' topLeft→topRight vectors therefore encodes
+/// the page's rotation directly — text rotated R° clockwise yields reading
+/// vectors at −R° — and rounding that direction to the nearest 90° gives the
+/// correction in one pass. (The older two-step fast/accurate scheme died with
+/// this API: fast-level recognition no longer sees enough text to vote.)
 ///
 /// Pages without enough text (photos, blanks) are left untouched.
-enum OrientationDetector {
-    static func rotationToUpright(for image: CGImage) -> Int {
+nonisolated enum OrientationDetector {
+    static func rotationToUpright(for image: CGImage) async -> Int {
         guard let sample = downsampled(image, maxDimension: 1200) else { return 0 }
-
-        let horizontal = fastTextScore(sample, orientation: .up)
-        let vertical = fastTextScore(sample, orientation: .right)
-        // Below this there is no meaningful text on the page (sideways reads
-        // of real text score ~5; real text scores far higher).
-        guard max(horizontal, vertical) > 8 else { return 0 }
-
-        if horizontal >= vertical {
-            return readingOrderDescends(sample, orientation: .up) ? 0 : 180
-        } else {
-            return readingOrderDescends(sample, orientation: .right) ? 90 : 270
-        }
-    }
-
-    private static func fastTextScore(
-        _ image: CGImage, orientation: CGImagePropertyOrientation
-    ) -> Double {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .fast
-        request.usesLanguageCorrection = false
-        let handler = VNImageRequestHandler(cgImage: image, orientation: orientation)
-        try? handler.perform([request])
-        return (request.results ?? []).reduce(0.0) { sum, observation in
-            guard let top = observation.topCandidates(1).first else { return sum }
-            return sum + Double(top.confidence) * Double(top.string.count)
-        }
-    }
-
-    /// True when accurate-level reading order flows top to bottom, i.e. the
-    /// page's polarity matches the given orientation. Defaults to true when
-    /// there are too few lines to judge.
-    private static func readingOrderDescends(
-        _ image: CGImage, orientation: CGImagePropertyOrientation
-    ) -> Bool {
-        let request = VNRecognizeTextRequest()
+        var request = RecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
-        let handler = VNImageRequestHandler(cgImage: image, orientation: orientation)
-        try? handler.perform([request])
-        let ys = (request.results ?? []).map { $0.boundingBox.midY }
-        guard ys.count >= 2 else { return true }
+        let observations = (try? await request.perform(on: sample)) ?? []
 
-        // Sign of the regression slope of line position over reading index.
-        let n = Double(ys.count)
-        let sumX = Double(ys.count * (ys.count - 1)) / 2
-        let sumY = ys.reduce(0, +)
-        let sumXY = ys.enumerated().reduce(0.0) { $0 + Double($1.offset) * $1.element }
-        let sumXX = Double((ys.count - 1) * ys.count * (2 * ys.count - 1)) / 6
-        let slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX)
-        return slope <= 0.005
+        let width = Double(sample.width)
+        let height = Double(sample.height)
+        let minimumLength = min(width, height) * 0.08
+
+        var totalScore = 0.0
+        var sumX = 0.0
+        var sumY = 0.0
+        var lineCount = 0
+        for observation in observations {
+            guard let top = observation.topCandidates(1).first else { continue }
+            totalScore += Double(top.confidence) * Double(top.string.count)
+            let dx = (observation.topRight.x - observation.topLeft.x) * width
+            let dy = (observation.topRight.y - observation.topLeft.y) * height
+            let length = (dx * dx + dy * dy).squareRoot()
+            guard length > minimumLength else { continue }
+            // Accumulate unit vectors: a circular mean that handles the ±180°
+            // wrap of upside-down pages.
+            sumX += dx / length
+            sumY += dy / length
+            lineCount += 1
+        }
+        // Demand real evidence before rotating a page.
+        guard totalScore > 8, lineCount >= 2 else { return 0 }
+
+        let theta = atan2(sumY, sumX) * 180 / .pi
+        return (Int((theta / 90).rounded()) * 90 % 360 + 360) % 360
     }
 
     /// Estimates the page's small-angle skew from the tilt of recognized text
@@ -76,24 +55,25 @@ enum OrientationDetector {
     /// evidence is too weak to act on — sparse pages (few lines, or lines
     /// that disagree about the angle) are deliberately left untouched, since
     /// guessing there does more harm than good.
-    static func skewCorrectionDegrees(for image: CGImage) -> Double? {
+    static func skewCorrectionDegrees(for image: CGImage) async -> Double? {
         guard let sample = downsampled(image, maxDimension: 1600) else { return nil }
-        let request = VNRecognizeTextRequest()
+        var request = RecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
-        let handler = VNImageRequestHandler(cgImage: sample, orientation: .up)
-        try? handler.perform([request])
+        let observations = (try? await request.perform(on: sample)) ?? []
 
         let width = Double(sample.width)
         let height = Double(sample.height)
         // Only reasonably wide lines carry a trustworthy angle.
-        let angles = (request.results ?? [])
-            .filter { $0.boundingBox.width > 0.15 }
+        let angles = observations
+            .filter { $0.boundingBox.cgRect.width > 0.15 }
             .map { observation -> Double in
                 // Corner points are normalized; convert to pixels so the
                 // angle isn't distorted by the page's aspect ratio.
-                let dx = (observation.topRight.x - observation.topLeft.x) * width
-                let dy = (observation.topRight.y - observation.topLeft.y) * height
+                let topLeft = observation.topLeft
+                let topRight = observation.topRight
+                let dx = (topRight.x - topLeft.x) * width
+                let dy = (topRight.y - topLeft.y) * height
                 return atan2(dy, dx) * 180 / .pi
             }
         guard angles.count >= 4 else { return nil }
@@ -104,9 +84,8 @@ enum OrientationDetector {
         // Act only on a clear, consistent, small tilt.
         guard abs(median) >= 0.25, abs(median) <= 6, deviation <= 1.0 else { return nil }
         // Vision's Y axis points up: a positive line angle means the text
-        // rises to the right, i.e. the page is tilted counterclockwise, so
-        // the correction is that many degrees clockwise... verified by the
-        // round-trip unit test rather than trusted from this comment.
+        // rises to the right, i.e. the page is tilted counterclockwise —
+        // sign convention pinned by the round-trip unit test.
         return median
     }
 
@@ -129,7 +108,7 @@ enum OrientationDetector {
     }
 }
 
-extension CGImage {
+nonisolated extension CGImage {
     /// Returns the image rotated by a small angle (for deskewing), keeping
     /// the canvas size and filling revealed corners with white.
     func rotatedBySmallAngle(degreesClockwise degrees: Double) -> CGImage? {

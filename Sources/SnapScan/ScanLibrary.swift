@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Observation
 
-struct ScanDocument: Identifiable, Equatable {
+nonisolated struct ScanDocument: Identifiable, Equatable {
     let id: UUID
     let url: URL
     let name: String
@@ -20,7 +20,7 @@ final class ScanLibrary {
 
     var documents: [ScanDocument] = []
 
-    private struct Entry: Codable {
+    nonisolated private struct Entry: Codable {
         let id: UUID
         var bookmark: Data
         let added: Date

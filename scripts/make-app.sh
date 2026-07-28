@@ -29,8 +29,10 @@ install_name_tool \
 echo "== embed sane runtime =="
 "$REPO/scripts/embed-sane.sh" "$CONTENTS"
 
-echo "== codesign (ad hoc) =="
-codesign --force -s - "$APP" 2>/dev/null
+echo "== codesign (ad hoc, sandboxed) =="
+codesign --force -s - \
+    --entitlements "$REPO/Support/SnapScan.entitlements" \
+    "$APP" 2>/dev/null
 
 echo "== verify bundle links =="
 otool -L "$CONTENTS/MacOS/SnapScan" | grep -E "libsane" || {

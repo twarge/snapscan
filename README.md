@@ -45,6 +45,13 @@ A name field sits above the pages: when a new scan starts it is focused
 with the proposed name selected, so just typing and pressing return renames
 the PDF.
 
+**Auto paper size** (Paper ▸ Auto): scans full-width with hardware length
+detection and the scanner's black background, crops to the detected paper,
+and snaps to a standard size (Letter, A4, Legal, A5, photo sizes, …) when
+within ~5 mm per axis — receipts and other odd sizes keep their exact
+measured dimensions. Snapped pages are centered on the standard-size PDF
+page; the page cell shows what was decided.
+
 All settings live in SnapScan ▸ Settings (⌘,): sides, color mode, 150–600
 dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
 folder, the hardware button toggle, menu-bar-only mode, and start-at-login.
@@ -69,9 +76,16 @@ Or open `SnapScan.xcodeproj` — the app target runs, debugs, and tests
 (⌘U) from Xcode, and an "Embed SANE Runtime" build phase calls
 `scripts/embed-sane.sh` so Xcode-built bundles are just as self-contained.
 Both builds share the same sources; run `scripts/build-sane.sh` once before
-either. Requires Xcode (Swift 5.9+) and pkg-config. During development,
-`swift run` from the repo root uses `vendor/` directly; bundled apps use
-the copy in `Contents/Resources/sane`.
+either. Requires Xcode 16+ (Swift 6.2 tools, macOS 15 target) and
+pkg-config. During development, `swift run` from the repo root uses
+`vendor/` directly; bundled apps use the copy in
+`Contents/Resources/sane`.
+
+The app is **sandboxed** (USB device entitlement for the scanner,
+user-selected file access for the scans folder — choosing a folder in
+Settings stores a security-scoped bookmark). It builds in the Swift 6
+language mode with main-actor default isolation, tests with Swift Testing,
+and uses the async Swift Vision API.
 
 ## How the pieces fit
 

@@ -181,6 +181,7 @@ actor SaneSession {
     func configure(settings: ScanSettings) throws {
         guard handle != nil else { throw SaneError.notOpen }
         let paper = settings.paperSize.millimeters
+        let auto = settings.paperSize == .auto
         setOption(SANE_NAME_SCAN_SOURCE, string: settings.source.rawValue)
         setOption(SANE_NAME_SCAN_MODE, string: settings.mode.rawValue)
         setOption(SANE_NAME_SCAN_RESOLUTION, int: SANE_Int(settings.resolution))
@@ -190,7 +191,12 @@ actor SaneSession {
         setOption(SANE_NAME_SCAN_TL_Y, fixedMillimeters: 0)
         setOption(SANE_NAME_SCAN_BR_X, fixedMillimeters: paper.width)
         setOption(SANE_NAME_SCAN_BR_Y, fixedMillimeters: paper.height)
-        setOption("swcrop", bool: settings.autocrop)
+        // Auto size: hardware detects the paper's trailing edge (the frame
+        // ends there) and the black background makes the paper's width
+        // detectable in post-processing.
+        setOption("ald", bool: auto)
+        setOption("bgcolor", string: auto ? "Black" : "Default")
+        setOption("swcrop", bool: settings.autocrop && !auto)
         // Percentage of dark pixels below which a page is discarded as blank.
         setOption("swskip", fixedMillimeters: settings.skipBlankPages ? 1.0 : 0.0)
     }
