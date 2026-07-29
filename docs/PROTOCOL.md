@@ -178,12 +178,67 @@ in §4.1), so JPEG may be reachable in some configuration, but it is not
 used here. Whether any mode or resolution switches the device to
 compressed output is **[open]** — compare a 600 dpi color capture.
 
-### 4.4 Still open
+### 4.4 Window IDs and duplex [capture]
 
-- Duplex: how front/back streams are selected and interleaved.
-- Auto length detection: how a short page's actual length is reported
-  (presumably the pixel-size read or the sense residual).
-- Resolution variants: whether >300 dpi requires the diagnostic
-  pre-read seen in §4.1, and whether it changes the data format.
-- Empty feeder and jam: which sense keys appear (the empty-feeder path
-  is captured in `01-open.log`; sense decoding is not yet written up).
+Windows are identified by a single byte: **`0x00` = front, `0x80` =
+back**. The ID appears in two places:
+
+- **SCAN** — the data-out phase lists the windows to scan. Simplex sends
+  one byte (`00`), duplex sends two (`00 80`), and the CDB's byte 4 is
+  that list's length (`01` or `02` respectively).
+- **READ** — CDB byte 5 (the SCSI data-type qualifier) selects the
+  window to read from: `28 00 00 00 00 00 …` reads front image data,
+  `28 00 00 00 00 80 …` reads back. The pixel-size read (type `0x80`)
+  is likewise per-window.
+
+In duplex the host **alternates reads between the two windows**
+(`00`, `80`, `00`, `80`, …) as data becomes available, rather than
+draining one side and then the other. From `03-duplex.log` (13,965
+transfers).
+
+### 4.5 Flow control and the attention status [capture]
+
+A status packet with **byte 9 = `0x02`** means "check condition": the
+host must issue REQUEST SENSE (CDB `03 00 00 00 12`, 18 bytes) before
+continuing. The sense payload distinguishes two very different
+situations, and both are normal:
+
+| sense bytes | meaning |
+|---|---|
+| `f0 00 60 … info=residual … 0a` | sense key `0x0` (NO SENSE) with EOM+ILI: **end of page**, information field = unfilled bytes of the final read |
+| `f0 00 03 … 80 13 …` | sense key `0x3`, vendor ASC/ASCQ `0x80`/`0x13`: **data not ready for that window** — retry the read |
+
+The second form dominates duplex captures (1,922 occurrences): the
+back-side window frequently has no data ready while the sheet is still
+feeding, and the host simply reads again. Treating it as an error would
+break duplex scanning.
+
+### 4.6 Resolution and chunking [capture]
+
+Comparing 600 dpi (`02-scan.log`) with 300 dpi color (`04-color-300.log`):
+
+| | 600 dpi | 300 dpi |
+|---|---|---|
+| pixel size read | 5096 × 6600 | 2550 × 3300 |
+| bytes per line (RGB) | 15,288 | 7,650 |
+| READ transfer length | 259,896 (`0x03F738`) | 260,100 (`0x03F804`) |
+| lines per read | 17 | 34 |
+
+The transfer length is always a **whole number of lines** landing just
+under 256 KiB — a host-side buffering choice, not a device requirement;
+a new driver may pick its own line-aligned chunk. The data format is
+identical at both resolutions (24-bit RGB), and the diagnostic exchange
+of §4.1 appears in both, so it is not resolution-gated as previously
+suspected.
+
+### 4.7 Still open
+
+- Auto length detection: how a short page's true length is reported
+  (presumably the pixel-size read after start, or the sense residual).
+- Whether any mode or resolution yields JPEG-compressed data.
+- MODE SELECT page layouts (double-feed behavior, background color).
+- SET WINDOW descriptor field usage — the largest remaining gap, and
+  the one a new driver most needs. Derive by capturing scans at several
+  known geometries/resolutions/modes and diffing the 72-byte payload.
+- Sensor bit assignments in the vendor `0xC2` block.
+- Jam and cover-open sense codes.
