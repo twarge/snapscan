@@ -1,6 +1,4 @@
-# Build products
-.build/
-dist/
+# Build products (Xcode DerivedData is the only output location)
 DerivedData/
 
 # Vendored SANE: keep the source tarballs (GPL source availability),

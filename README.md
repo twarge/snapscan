@@ -76,9 +76,9 @@ scheme pre-action compiles the vendored SANE stack and generates
 `vendor/src`, so no network is needed), and a Dependencies aggregate
 target backstops it. **A fresh checkout is just: open the project, ⌘R**
 — the first build takes ~3 minutes for the SANE stack, then it's never
-rebuilt. `make` drives the same project for CLI use and copies the
-Release product to `dist/`. Requires Xcode 16+ (macOS 15 target) and
-pkg-config.
+rebuilt. The app lives only where Xcode puts it (DerivedData; `make`
+prints the product path, or use Product ▸ Show Build Folder). Requires
+Xcode 16+ (macOS 15 target) and pkg-config.
 
 The app is **sandboxed** (USB device entitlement for the scanner,
 user-selected file access for the scans folder — choosing a folder in
