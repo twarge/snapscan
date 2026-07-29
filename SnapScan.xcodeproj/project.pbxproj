@@ -37,6 +37,20 @@
 		AB0300000000000000000001 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF0300000000000000000001 /* IOKit.framework */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXAggregateTarget section */
+		A10000000000000000000004 /* Dependencies */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = A40000000000000000000005 /* Build configuration list for PBXAggregateTarget "Dependencies" */;
+			buildPhases = (
+				A70000000000000000000002 /* Build SANE if missing */,
+			);
+			dependencies = (
+			);
+			name = Dependencies;
+			productName = Dependencies;
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXContainerItemProxy section */
 		AC0100000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -44,6 +58,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = A10000000000000000000001;
 			remoteInfo = SnapScan;
+		};
+		AC0100000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000004;
+			remoteInfo = Dependencies;
+		};
+		AC0100000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000004;
+			remoteInfo = Dependencies;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -212,6 +240,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				A80000000000000000000003 /* PBXTargetDependency */,
 			);
 			name = SaneSmokeTest;
 			productName = SaneSmokeTest;
@@ -231,6 +260,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				A80000000000000000000002 /* PBXTargetDependency */,
 			);
 			name = SnapScan;
 			productName = SnapScan;
@@ -289,6 +319,7 @@
 				A10000000000000000000001 /* SnapScan */,
 				A10000000000000000000002 /* SnapScanTests */,
 				A10000000000000000000003 /* SaneSmokeTest */,
+				A10000000000000000000004 /* Dependencies */,
 			);
 		};
 /* End PBXProject section */
@@ -318,6 +349,25 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A70000000000000000000002 /* Build SANE if missing */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build SANE if missing";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cd \"$SRCROOT\"\nif [ ! -f vendor/lib/libsane.1.dylib ]; then scripts/build-sane.sh; fi\nif [ ! -d SANE.xcframework ]; then scripts/make-xcframework.sh; fi\n";
+		};
 		A70000000000000000000001 /* Embed SANE Runtime */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -392,6 +442,16 @@
 			isa = PBXTargetDependency;
 			target = A10000000000000000000001 /* SnapScan */;
 			targetProxy = AC0100000000000000000001 /* PBXContainerItemProxy */;
+		};
+		A80000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000004 /* Dependencies */;
+			targetProxy = AC0100000000000000000002 /* PBXContainerItemProxy */;
+		};
+		A80000000000000000000003 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000004 /* Dependencies */;
+			targetProxy = AC0100000000000000000003 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -619,6 +679,22 @@
 			};
 			name = Release;
 		};
+		AE0000000000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		AE000000000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 /* Begin XCConfigurationList section */
 		A40000000000000000000001 /* Build configuration list for PBXProject "SnapScan" */ = {
 			isa = XCConfigurationList;
@@ -634,6 +710,15 @@
 			buildConfigurations = (
 				AE0000000000000000000003 /* Debug */,
 				AE0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A40000000000000000000005 /* Build configuration list for PBXAggregateTarget "Dependencies" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE0000000000000000000009 /* Debug */,
+				AE000000000000000000000A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

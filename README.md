@@ -70,13 +70,15 @@ make test     # unit tests (xcodebuild test)
 make smoke    # headless hardware check (quit SnapScan first — it holds the scanner)
 ```
 
-Xcode is the only build system: `make` drives the same `SnapScan.xcodeproj`
-that Build & Run uses — same targets, signing, entitlements, and the
-"Embed SANE Runtime" phase (`scripts/embed-sane.sh`) — and copies the
-Release product to `dist/`. Day-to-day, just open the project and ⌘R;
-run `make` (or the two scripts it sequences) once first so the vendored
-SANE stack and `SANE.xcframework` exist. Requires Xcode 16+ (macOS 15
-target) and pkg-config.
+Xcode is the only build system, and it builds the dependencies too: a
+scheme pre-action compiles the vendored SANE stack and generates
+`SANE.xcframework` when they're missing (the source tarballs are in
+`vendor/src`, so no network is needed), and a Dependencies aggregate
+target backstops it. **A fresh checkout is just: open the project, ⌘R**
+— the first build takes ~3 minutes for the SANE stack, then it's never
+rebuilt. `make` drives the same project for CLI use and copies the
+Release product to `dist/`. Requires Xcode 16+ (macOS 15 target) and
+pkg-config.
 
 The app is **sandboxed** (USB device entitlement for the scanner,
 user-selected file access for the scans folder — choosing a folder in

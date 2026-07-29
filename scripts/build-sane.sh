@@ -8,6 +8,18 @@ PREFIX="$REPO/vendor"
 SRC="$PREFIX/src"
 JOBS="$(sysctl -n hw.ncpu)"
 
+# When invoked from an Xcode script phase or scheme pre-action, Xcode's
+# exported build settings poison autoconf ("C compiler cannot create
+# executables"). Re-exec under a clean environment instead of playing
+# whack-a-mole with individual variables.
+if [ -n "${XCODE_VERSION_ACTUAL:-}" ] && [ -z "${SNAPSCAN_CLEAN_ENV:-}" ]; then
+    exec /usr/bin/env -i \
+        SNAPSCAN_CLEAN_ENV=1 \
+        HOME="$HOME" \
+        PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+        /bin/bash "$0" "$@"
+fi
+
 # Match the app's deployment target so the linker doesn't warn about
 # dylibs built for a newer macOS than the app targets.
 export MACOSX_DEPLOYMENT_TARGET=14.0
