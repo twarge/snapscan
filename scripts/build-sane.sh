@@ -55,6 +55,18 @@ PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" ./configure \
 make -j"$JOBS" >/dev/null
 make install >/dev/null
 
-echo "== verify =="
-"$PREFIX/bin/scanimage" --version
-echo "Done. Run '$PREFIX/bin/scanimage -L' with the scanner attached."
+echo "== prune =="
+# Keep only what the app consumes: the two dylibs, the fujitsu backend
+# module, the SANE headers (for the xcframework), and etc/sane.d config.
+# Frontends (scanimage), saned, docs, static libs, and libtool metadata
+# are install byproducts nothing uses.
+cd "$PREFIX"
+rm -rf bin sbin share var lib/pkgconfig
+rm -f lib/*.a lib/*.la lib/sane/*.la
+# The dll meta-backend lives inside libsane itself; its standalone module
+# is never loaded.
+rm -f lib/sane/libsane-dll*
+# Extracted source trees are spent once installed; the tarballs stay.
+find "$SRC" -maxdepth 1 -type d ! -path "$SRC" -exec rm -rf {} +
+
+echo "Done. Runtime pieces are in $PREFIX/lib, headers in $PREFIX/include."

@@ -118,13 +118,16 @@ and uses the async Swift Vision API.
   consistent angles, 0.25–6°) — sparse pages are deliberately left alone.
   SANE's `--swdeskew` is not used: its estimator tilts straight-but-sparse
   pages.
-- `Sources/SnapScan/PNM.swift` — decodes scanimage's PNM output (P4/P5/P6);
-  the vendored build has no libpng/libjpeg on purpose.
+- `Sources/SnapScan/FrameImage.swift` — builds CGImages from raw scanner
+  frames (including partial pages mid-scan).
 - `Sources/SnapScan/PDFBuilder.swift` — assembles pages into a PDF at true
-  physical size (pixels ÷ dpi × 72 points).
-- `scripts/make-app.sh` — copies the SANE runtime into the bundle, rewrites
-  dylib install names to `@executable_path`/`@loader_path`, writes a minimal
-  `dll.conf` (just `fujitsu`), and ad-hoc codesigns everything.
+  physical size (pixels ÷ dpi × 72 points), centering size-snapped pages.
+- `scripts/embed-sane.sh` (build phase) — copies the SANE backend, config,
+  licenses, and icon into the bundle, rewrites dylib install names to
+  `@rpath`/`@loader_path`, writes a minimal `dll.conf` (just `fujitsu`),
+  and signs the pieces with the app's identity.
+- `scripts/make-icon.swift` — the app icon's source; only run if
+  `Support/AppIcon.icns` is ever deleted.
 
 ## License
 
@@ -147,4 +150,4 @@ for details and source availability.
 - One scanner: the app picks the first SANE device it finds.
 - Only the iX500's backend is bundled; other SANE-supported scanners would
   need their backends added in `scripts/build-sane.sh` (`BACKENDS=…`) and
-  `scripts/make-app.sh`.
+  `scripts/embed-sane.sh`.

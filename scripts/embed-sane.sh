@@ -43,8 +43,8 @@ install_name_tool \
     "$SANE_DEST/lib/sane/libsane-fujitsu.1.so" 2>/dev/null
 
 # The SANE pieces must be signed themselves; the outer bundle signature is
-# the caller's (Xcode's or make-app.sh's) job. Under Xcode, sign with the
-# same identity as the app (EXPANDED_CODE_SIGN_IDENTITY); ad hoc otherwise.
+# Xcode's job. Sign with the same identity as the app
+# (EXPANDED_CODE_SIGN_IDENTITY); ad hoc otherwise.
 SIGN_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:--}"
 [ -n "$SIGN_IDENTITY" ] || SIGN_IDENTITY="-"
 codesign --force -s "$SIGN_IDENTITY" \

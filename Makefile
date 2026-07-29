@@ -27,7 +27,12 @@ SANE.xcframework/Info.plist: vendor/lib/libsane.1.dylib scripts/make-xcframework
 	scripts/make-xcframework.sh
 
 app: SANE.xcframework/Info.plist
-	scripts/make-app.sh
+	xcodebuild -project $(PROJECT) -scheme SnapScan -configuration Release \
+		-derivedDataPath $(DERIVED) build 2>&1 | grep -E "^\*\*|error:"
+	rm -rf dist/SnapScan.app
+	mkdir -p dist
+	cp -R $(DERIVED)/Build/Products/Release/SnapScan.app dist/SnapScan.app
+	@echo "Done: dist/SnapScan.app"
 
 test: SANE.xcframework/Info.plist
 	xcodebuild -project $(PROJECT) -scheme SnapScan \
