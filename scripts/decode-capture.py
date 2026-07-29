@@ -40,6 +40,12 @@ OPCODES = {
 HEADER = re.compile(
     r"^(IN |OUT) ep=0x([0-9a-f]{2}) req=(-?\d+) act=(-?\d+) status=(-?\d+)")
 
+# Framing constants, established from our own captures (see PROTOCOL.md).
+CMD_TAG = b"\x43"
+STATUS_TAG = b"\x53"
+CDB_OFFSET = 19
+STATUS_LEN = 13
+
 
 def parse(path: Path):
     """Yields (direction, endpoint, requested, actual, status, payload)."""
@@ -63,14 +69,16 @@ def parse(path: Path):
 
 
 def describe(direction, endpoint, requested, actual, status, payload) -> str:
-    # The Fujitsu USB wrapper: 0x43-tagged command packet carrying a CDB.
-    if direction == "OUT" and payload[:1] == b"\x43" and len(payload) >= 12:
-        cdb = payload[10:]
+    # Observed framing (captures 01-open onward): a 31-byte command packet
+    # tagged 0x43 ('C'), whose last 12 bytes are the SCSI CDB — the opcode
+    # lands at offset 19. Replies end with a 13-byte packet tagged 0x53 ('S').
+    if direction == "OUT" and payload[:1] == CMD_TAG and len(payload) >= CDB_OFFSET + 1:
+        cdb = payload[CDB_OFFSET:CDB_OFFSET + 12]
         name = OPCODES.get(cdb[0], f"opcode 0x{cdb[0]:02x}")
         return (f"CMD  {name}\n"
-                f"     wrapper: {payload[:10].hex(' ')}\n"
-                f"     cdb:     {cdb[:12].hex(' ')}")
-    if direction == "IN " and actual == 13:
+                f"     header: {payload[:CDB_OFFSET].hex(' ')}\n"
+                f"     cdb:    {cdb.hex(' ')}")
+    if direction == "IN " and actual == STATUS_LEN and payload[:1] == STATUS_TAG:
         return f"STAT {payload.hex(' ')}"
     if direction == "OUT":
         return f"DATA out {actual} bytes: {payload[:32].hex(' ')}" + (
