@@ -67,25 +67,6 @@ final class ScannerEngine {
     private static let ix500VendorID = 0x04C5
     private static let ix500ProductID = 0x132B
 
-    /// Root of the SANE installation: contains lib/, etc/sane.d/.
-    /// Resolution order: explicit env override, the app bundle, then the dev checkout.
-    nonisolated static func sanePrefix() -> URL? {
-        var candidates: [URL] = []
-        if let override = ProcessInfo.processInfo.environment["SNAPSCAN_SANE_PREFIX"] {
-            candidates.append(URL(fileURLWithPath: override))
-        }
-        if let resources = Bundle.main.resourceURL {
-            candidates.append(resources.appendingPathComponent("sane"))
-        }
-        candidates.append(
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appendingPathComponent("vendor"))
-        return candidates.first {
-            FileManager.default.isReadableFile(
-                atPath: $0.appendingPathComponent("lib/sane/libsane-fujitsu.1.so").path)
-        }
-    }
-
     init() {
         sessionDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SnapScan", isDirectory: true)
@@ -118,7 +99,7 @@ final class ScannerEngine {
             Task { await detectScanner() }
         } else {
             deviceID = nil
-            Task { await SaneSession.shared.closeDevice() }
+            Task { await NativeScanner.shared.close() }
             if !isBusy { status = .noScanner }
         }
     }
@@ -142,8 +123,9 @@ final class ScannerEngine {
 
     func detectScanner() async {
         guard !isBusy else { return }
-        guard let prefix = Self.sanePrefix() else {
-            lastError = "Bundled scanner library not found"
+        guard NativeScanner.isPresent() else {
+            deviceID = nil
+            scannerName = nil
             status = .noScanner
             return
         }
@@ -152,15 +134,9 @@ final class ScannerEngine {
         defer { status = deviceID == nil ? .noScanner : .idle }
 
         do {
-            let devices = try await SaneSession.shared.listDevices(prefix: prefix)
-            guard let device = devices.first else {
-                deviceID = nil
-                scannerName = nil
-                return
-            }
-            try await SaneSession.shared.open(device: device.name, prefix: prefix)
-            deviceID = device.name
-            scannerName = "\(device.vendor) \(device.model)"
+            let device = try await NativeScanner.shared.open()
+            deviceID = "\(device.vendor) \(device.model)"
+            scannerName = deviceID
         } catch {
             deviceID = nil
             scannerName = nil
@@ -197,7 +173,7 @@ final class ScannerEngine {
         let currentSettings = settings
 
         do {
-            let result = try await SaneSession.shared.scanBatch(
+            let result = try await NativeScanner.shared.scanBatch(
                 settings: currentSettings,
                 startingAtPage: document.pages.count
             ) { [weak self] event in
@@ -229,7 +205,7 @@ final class ScannerEngine {
     }
 
     private func handleBatchEvent(
-        _ event: SaneSession.BatchEvent, for document: ActiveDocument
+        _ event: NativeScanner.BatchEvent, for document: ActiveDocument
     ) {
         switch event {
         case .pageStarted(let index):
@@ -335,7 +311,7 @@ final class ScannerEngine {
     }
 
     func cancelScan() {
-        SaneSession.shared.cancelBox.cancel()
+        NativeScanner.shared.cancelFlag.cancel()
     }
 
     /// Finalizes the current document: the next scan starts a new PDF.
@@ -474,7 +450,7 @@ final class ScannerEngine {
                 guard self.status == .idle, self.scannerPresent, self.deviceID != nil
                 else { continue }
 
-                guard let pressed = await SaneSession.shared.readSensor("scan") else {
+                guard let pressed = await NativeScanner.shared.scanButtonPressed() else {
                     continue
                 }
                 if pressed, !previouslyPressed {

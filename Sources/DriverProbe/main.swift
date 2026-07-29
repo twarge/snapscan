@@ -84,6 +84,39 @@ do {
 
 runDiagnostics()
 
+// Sensor mapping aid: poll the vendor 0xC2 block and print it whenever it
+// changes, so physical actions (press Scan, load paper, open the cover)
+// can be matched to bits.
+if CommandLine.arguments.contains("--watch-sensors") {
+    print("watching sensors — press the Scan button, load paper, open the cover…")
+    print("(ctrl-C to stop)")
+    let semaphore = DispatchSemaphore(value: 0)
+    Task.detached {
+        defer { semaphore.signal() }
+        do {
+            _ = try await NativeScanner.shared.open()
+            var previous = Data()
+            while true {
+                let block = try await NativeScanner.shared.readSensors()
+                if block != previous {
+                    let hex = block.map { String(format: "%02x", $0) }.joined(separator: " ")
+                    let bits = block.enumerated()
+                        .filter { $0.element != 0 }
+                        .map { "byte\($0.offset)=0x\(String($0.element, radix: 16))" }
+                        .joined(separator: " ")
+                    print("\(hex)   \(bits.isEmpty ? "(all zero)" : bits)")
+                    previous = block
+                }
+                try await Task.sleep(for: .milliseconds(250))
+            }
+        } catch {
+            print("sensor watch ended: \(error.localizedDescription)")
+        }
+    }
+    semaphore.wait()
+    exit(0)
+}
+
 // Optional: run a real scan through the native pipeline.
 //   DriverProbe --scan [--duplex] [--resolution N] [--out DIR]
 if CommandLine.arguments.contains("--scan") {

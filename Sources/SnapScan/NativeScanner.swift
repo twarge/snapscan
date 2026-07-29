@@ -115,8 +115,27 @@ actor NativeScanner {
 
     var isOpen: Bool { transport != nil }
 
-    /// Reads a hardware sensor byte block (vendor 0xC2). Bit assignments are
-    /// still being mapped; callers ask for a specific bit.
+    /// True when the scanner's Scan button is pressed; nil when unknown.
+    ///
+    /// Returns nil until the bit position is confirmed against hardware
+    /// (`DriverProbe --watch-sensors`, pressing the button and watching which
+    /// bit moves). Reporting a guess here would let an unrelated status bit
+    /// start a scan and feed paper unexpectedly, so the feature stays inert
+    /// rather than approximate.
+    func scanButtonPressed() -> Bool? {
+        guard Self.scanButtonBitConfirmed else { return nil }
+        guard let block = try? readSensors(), block.count > Self.scanButtonByte else {
+            return nil
+        }
+        return block[block.startIndex + Self.scanButtonByte] & Self.scanButtonMask != 0
+    }
+
+    /// Flip to true once the byte/mask below are verified on hardware.
+    private static let scanButtonBitConfirmed = false
+    private static let scanButtonByte = 9
+    private static let scanButtonMask: UInt8 = 0x01
+
+    /// Reads the raw hardware sensor block (vendor 0xC2).
     func readSensors() throws -> Data {
         guard let transport else { throw ScanError.notOpen }
         let (_, data) = try transport.send(
