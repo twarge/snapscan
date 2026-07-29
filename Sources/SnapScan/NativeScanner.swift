@@ -237,14 +237,13 @@ actor NativeScanner {
                 dataOut: payload)
         }
 
-        for window in windows {
-            let windowDescriptor = Self.windowSettings(for: settings, window: window)
-            let payload = ScannerCommands.windowParameterList(windowDescriptor)
-            try run(
-                "set window",
-                ScannerCommands.setWindow(parameterLength: payload.count),
-                dataOut: payload)
-        }
+        // One SET WINDOW carrying every window's descriptor.
+        let windowPayload = ScannerCommands.windowParameterList(
+            descriptor, windows: windows)
+        try run(
+            "set window (\(windows.count))",
+            ScannerCommands.setWindow(parameterLength: windowPayload.count),
+            dataOut: windowPayload)
 
         let table = ScannerCommands.quantizationTablePayload
         try run(
@@ -284,6 +283,7 @@ actor NativeScanner {
         readLoop: while true {
             if cancelFlag.isCancelled { break }
 
+            let lengthBeforeRead = buffer.count
             let (status, data) = try transport.send(
                 cdb: ScannerCommands.read(
                     type: .image, window: window, length: chunkLength),
@@ -299,6 +299,10 @@ actor NativeScanner {
                     }
                     break readLoop
                 case .notReadyRetry:
+                    // The device still returns a full buffer here, but its
+                    // contents are not image data — drop it and ask again,
+                    // or the page grows without bound.
+                    buffer.removeLast(buffer.count - lengthBeforeRead)
                     continue readLoop
                 case .other(let key, let asc, let ascq):
                     throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)

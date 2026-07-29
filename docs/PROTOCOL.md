@@ -201,6 +201,18 @@ In duplex the host **alternates reads between the two windows**
 draining one side and then the other. From `03-duplex.log` (13,965
 transfers).
 
+### 5.1 Multiple windows in one SET WINDOW [capture]
+
+Duplex sends **one** SET WINDOW whose parameter list holds both
+descriptors — 8-byte header plus 64 bytes per window, so 136 bytes with
+`0x88` in the CDB's length field. Sending two separate SET WINDOW
+commands instead earns sense `05/2C/02` (illegal request, command
+sequence error).
+
+Only the **leading** descriptor carries the trailing vendor flag
+(`0xC0` at descriptor offset 53) and the paper size (offsets 56 and 60);
+in the back window's descriptor those bytes are zero.
+
 ### 4.5 Flow control and the attention status [capture]
 
 A status packet with **byte 9 = `0x02`** means "check condition": the
@@ -217,6 +229,11 @@ The second form dominates duplex captures (1,922 occurrences): the
 back-side window frequently has no data ready while the sheet is still
 feeding, and the host simply reads again. Treating it as an error would
 break duplex scanning.
+
+**The retry case still returns a full buffer**, but its contents are not
+image data. A driver must discard that read's bytes before retrying;
+appending them inflates the page without bound (observed: a 3,300-line
+page grew to 24,040 lines before this was fixed).
 
 ### 4.6 Resolution and chunking [capture]
 

@@ -232,7 +232,56 @@ nonisolated enum ScannerCommands {
     /// Builds the 72-byte SET WINDOW parameter list (8-byte header plus a
     /// 64-byte descriptor). Composition is always RGB/8-bit: this scanner
     /// digitises in colour only, and gray/lineart are produced on the host.
+    /// Builds the parameter list for one or more windows. Duplex sends a
+    /// single SET WINDOW carrying both descriptors (8-byte header + 64 bytes
+    /// each); sending two separate commands earns sense 05/2C/02, command
+    /// sequence error. Only the leading descriptor carries the trailing
+    /// vendor flag and paper size (docs/PROTOCOL.md §5.1).
+    static func windowParameterList(
+        _ settings: WindowSettings, windows: [Window]
+    ) -> Data {
+        var payload = [UInt8](repeating: 0, count: 8 + 64 * windows.count)
+        payload[6] = 0
+        payload[7] = 64  // per-descriptor length
+
+        for (index, window) in windows.enumerated() {
+            let base = 8 + 64 * index
+            func putUInt16(_ value: Int, at offset: Int) {
+                payload[base + offset] = UInt8((value >> 8) & 0xFF)
+                payload[base + offset + 1] = UInt8(value & 0xFF)
+            }
+            func putUInt32(_ value: Int, at offset: Int) {
+                payload[base + offset] = UInt8((value >> 24) & 0xFF)
+                payload[base + offset + 1] = UInt8((value >> 16) & 0xFF)
+                payload[base + offset + 2] = UInt8((value >> 8) & 0xFF)
+                payload[base + offset + 3] = UInt8(value & 0xFF)
+            }
+            payload[base] = window.rawValue
+            putUInt16(settings.resolutionDPI, at: 2)
+            putUInt16(settings.resolutionDPI, at: 4)
+            putUInt32(0, at: 6)  // upper-left X
+            putUInt32(0, at: 10)  // upper-left Y
+            putUInt32(settings.scanWidthUnits, at: 14)
+            putUInt32(settings.scanLengthUnits, at: 18)
+            payload[base + 25] = 0x05  // image composition: RGB
+            payload[base + 26] = 8  // bits per pixel
+            payload[base + 40] = 0xC1
+            payload[base + 42] = 0x01
+            if index == 0 {
+                payload[base + 53] = 0xC0
+                putUInt16(settings.paperWidthUnits, at: 56)
+                putUInt16(settings.paperLengthUnits, at: 60)
+            }
+        }
+        return Data(payload)
+    }
+
+    /// Single-window convenience.
     static func windowParameterList(_ settings: WindowSettings) -> Data {
+        windowParameterList(settings, windows: [settings.window])
+    }
+
+    private static func legacyWindowParameterList(_ settings: WindowSettings) -> Data {
         var payload = [UInt8](repeating: 0, count: 72)
 
         func putUInt16(_ value: Int, at offset: Int) {
