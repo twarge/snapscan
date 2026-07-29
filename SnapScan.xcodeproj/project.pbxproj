@@ -36,6 +36,10 @@
 		AB0800000000000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0800000000000000000001 /* main.swift */; };
 		AB0800000000000000000002 /* USBTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000014 /* USBTransport.swift */; };
 		AB0800000000000000000003 /* ScannerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000015 /* ScannerCommands.swift */; };
+		AB0100000000000000000016 /* NativeScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000016 /* NativeScanner.swift */; };
+		AB0800000000000000000004 /* NativeScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000016 /* NativeScanner.swift */; };
+		AB0800000000000000000005 /* FrameImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000012 /* FrameImage.swift */; };
+		AB0800000000000000000006 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000006 /* Models.swift */; };
 		AB0200000000000000000001 /* FileNameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000001 /* FileNameTests.swift */; };
 		AB0200000000000000000002 /* OrientationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000002 /* OrientationTests.swift */; };
 		AB0200000000000000000003 /* PDFBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000003 /* PDFBuilderTests.swift */; };
@@ -106,6 +110,7 @@
 		AF0700000000000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		AF0100000000000000000014 /* USBTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBTransport.swift; sourceTree = "<group>"; };
 		AF0100000000000000000015 /* ScannerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerCommands.swift; sourceTree = "<group>"; };
+		AF0100000000000000000016 /* NativeScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScanner.swift; sourceTree = "<group>"; };
 		AF0800000000000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		AF0500000000000000000004 /* DriverProbe */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = DriverProbe; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF0500000000000000000003 /* SaneSmokeTest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = SaneSmokeTest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -183,6 +188,7 @@
 				AF0100000000000000000013 /* PageGeometry.swift */,
 				AF0100000000000000000014 /* USBTransport.swift */,
 				AF0100000000000000000015 /* ScannerCommands.swift */,
+				AF0100000000000000000016 /* NativeScanner.swift */,
 				AF0100000000000000000003 /* DragRow.swift */,
 				AF0100000000000000000009 /* PDFPreview.swift */,
 				AF010000000000000000000E /* SettingsView.swift */,
@@ -443,6 +449,9 @@
 				AB0800000000000000000001 /* main.swift in Sources */,
 				AB0800000000000000000002 /* USBTransport.swift in Sources */,
 				AB0800000000000000000003 /* ScannerCommands.swift in Sources */,
+				AB0800000000000000000004 /* NativeScanner.swift in Sources */,
+				AB0800000000000000000005 /* FrameImage.swift in Sources */,
+				AB0800000000000000000006 /* Models.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -471,6 +480,7 @@
 				AB0100000000000000000013 /* PageGeometry.swift in Sources */,
 				AB0100000000000000000014 /* USBTransport.swift in Sources */,
 				AB0100000000000000000015 /* ScannerCommands.swift in Sources */,
+				AB0100000000000000000016 /* NativeScanner.swift in Sources */,
 				AB0100000000000000000003 /* DragRow.swift in Sources */,
 				AB0100000000000000000009 /* PDFPreview.swift in Sources */,
 				AB010000000000000000000E /* SettingsView.swift in Sources */,

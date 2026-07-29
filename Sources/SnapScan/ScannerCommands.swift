@@ -15,6 +15,7 @@ nonisolated enum ScannerCommands {
         case scan = 0x1B
         case setWindow = 0x24
         case read = 0x28
+        case send = 0x2A
         case objectPosition = 0x31
         case hardwareStatus = 0xC2  // vendor
         case scannerControl = 0xF1  // vendor
@@ -80,6 +81,119 @@ nonisolated enum ScannerCommands {
             0,
         ]
     }
+
+    static func sendDiagnostic(parameterLength: Int) -> [UInt8] {
+        [0x1D, 0, 0, 0, UInt8(parameterLength), 0]
+    }
+
+    static func readDiagnostic(allocationLength: Int) -> [UInt8] {
+        [0x1C, 0, 0, 0, UInt8(allocationLength), 0]
+    }
+
+    static func modeSelect(parameterLength: Int) -> [UInt8] {
+        // PF bit set (byte 1 = 0x10), parameter list length in byte 4.
+        [Opcode.modeSelect.rawValue, 0x10, 0, 0, UInt8(parameterLength), 0]
+    }
+
+    /// SEND with a vendor data type (byte 2), used for the table download.
+    static func send(dataType: UInt8, length: Int) -> [UInt8] {
+        [
+            Opcode.send.rawValue, 0, dataType, 0, 0, 0,
+            UInt8((length >> 16) & 0xFF),
+            UInt8((length >> 8) & 0xFF),
+            UInt8(length & 0xFF),
+            0,
+        ]
+    }
+
+    static func scannerControl(subcommand: UInt8) -> [UInt8] {
+        [Opcode.scannerControl.rawValue, subcommand, 0, 0, 0, 0]
+    }
+
+    // MARK: - Setup payloads
+    //
+    // The initialization sequence observed in every capture. Values whose
+    // meaning is established are built from settings; the rest are replayed
+    // as recorded and marked accordingly (docs/PROTOCOL.md §7).
+
+    /// SEND DIAGNOSTIC carries 16-byte ASCII command names, optionally
+    /// followed by binary parameters.
+    static func diagnosticCommand(_ name: String, parameters: [UInt8] = []) -> Data {
+        var payload = [UInt8](repeating: 0x20, count: 16)  // space-padded
+        for (offset, byte) in name.utf8.prefix(16).enumerated() {
+            payload[offset] = byte
+        }
+        return Data(payload + parameters)
+    }
+
+    /// "SET PRE READMODE" — the pre-read the device requires before scanning.
+    /// Parameters mirror the window: X/Y resolution, then scan width and
+    /// length in 1/1200 inch, composition, and a constant tail.
+    static func preReadModePayload(_ settings: WindowSettings) -> Data {
+        var parameters: [UInt8] = []
+        func putUInt16(_ value: Int) {
+            parameters.append(UInt8((value >> 8) & 0xFF))
+            parameters.append(UInt8(value & 0xFF))
+        }
+        func putUInt32(_ value: Int) {
+            parameters.append(UInt8((value >> 24) & 0xFF))
+            parameters.append(UInt8((value >> 16) & 0xFF))
+            parameters.append(UInt8((value >> 8) & 0xFF))
+            parameters.append(UInt8(value & 0xFF))
+        }
+        putUInt16(settings.resolutionDPI)
+        putUInt16(settings.resolutionDPI)
+        putUInt32(settings.scanWidthUnits)
+        putUInt32(settings.scanLengthUnits)
+        parameters.append(0x05)  // composition: RGB
+        parameters.append(contentsOf: [0x00, 0x00, 0xE4])  // constant tail
+        return diagnosticCommand("SET PRE READMODE", parameters: parameters)
+    }
+
+    /// A MODE SELECT parameter list: 4-byte header, page code, page length,
+    /// then page data.
+    static func modePage(code: UInt8, data: [UInt8]) -> Data {
+        // Observed page lengths count the bytes after the length field,
+        // padded so the list is 12 bytes (or 14 for the longer page).
+        // Length byte counts the page body: 6 for the standard pages,
+        // 8 for the longer 0x39 page (captured values).
+        var payload: [UInt8] = [0, 0, 0, 0, code, UInt8(max(6, data.count))]
+        payload.append(contentsOf: data)
+        while payload.count < 12 { payload.append(0) }
+        return Data(payload)
+    }
+
+    /// The pages written before every scan, in order. Only page 0x3A carries
+    /// non-zero data in our captures (`80 c0`); the others are written empty.
+    static let setupModePages: [(code: UInt8, data: [UInt8])] = [
+        (0x3C, []),
+        (0x38, []),
+        (0x37, []),
+        (0x39, [0, 0, 0, 0, 0, 0, 0, 0]),
+        (0x3A, [0x80, 0xC0]),
+        (0x33, []),
+    ]
+
+    /// The 138-byte table downloaded with SEND type 0x88 before scanning —
+    /// an 8-byte header plus two 64-byte quantization tables. Replayed
+    /// verbatim: the device requires it, and its contents never vary.
+    static let quantizationTablePayload: Data = {
+        let header: [UInt8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x40]
+        let luma: [UInt8] = [
+            0x00, 0x04, 0x03, 0x03, 0x04, 0x03, 0x03, 0x04,
+            0x04, 0x03, 0x04, 0x05, 0x05, 0x04, 0x05, 0x07,
+            0x0c, 0x07, 0x07, 0x06, 0x06, 0x07, 0x0e, 0x0a,
+            0x0b, 0x08, 0x0c, 0x11, 0x0f, 0x12, 0x12, 0x11,
+            0x0f, 0x10, 0x10, 0x13, 0x15, 0x1b, 0x17, 0x13,
+            0x14, 0x1a, 0x14, 0x10, 0x10, 0x18, 0x20, 0x18,
+            0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x1e, 0x12, 0x17,
+            0x21, 0x24, 0x21, 0x1e, 0x24, 0x1b, 0x1e, 0x1e,
+        ]
+        let chroma: [UInt8] =
+            [0x1d, 0x05, 0x05, 0x05, 0x07, 0x06, 0x07, 0x0e, 0x07, 0x07, 0x0e]
+            + [UInt8](repeating: 0x1d, count: 53)
+        return Data(header + luma + chroma)
+    }()
 
     static func setWindow(parameterLength: Int) -> [UInt8] {
         [
@@ -149,8 +263,10 @@ nonisolated enum ScannerCommands {
         payload[48] = 0xC1
         payload[50] = 0x01
         payload[61] = 0xC0
-        putUInt32(settings.paperWidthUnits, at: 64)
-        putUInt32(settings.paperLengthUnits, at: 68)
+        // Paper size is 16-bit here (each followed by two zero bytes),
+        // unlike the 32-bit scan area above.
+        putUInt16(settings.paperWidthUnits, at: 64)
+        putUInt16(settings.paperLengthUnits, at: 68)
         return Data(payload)
     }
 

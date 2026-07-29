@@ -56,6 +56,19 @@ nonisolated enum PaperSize: String, CaseIterable, Identifiable {
         case .legal: (215.872, 355.6)
         }
     }
+
+    /// Exact dimensions in the scanner's 1/1200-inch geometry units. Derived
+    /// from the nominal paper size rather than the millimetre values above,
+    /// which SANE clamps to the scanner's maximum width (215.872 mm) and so
+    /// land a unit short of a true 8.5 inches.
+    var geometryUnits: (width: Int, length: Int) {
+        switch self {
+        case .auto: (10200, 41400)  // 8.5 in wide, 34.5 in max length
+        case .letter: (10200, 13200)  // 8.5 x 11 in
+        case .a4: (9921, 14031)  // 210 x 297 mm
+        case .legal: (10200, 16800)  // 8.5 x 14 in
+        }
+    }
 }
 
 nonisolated struct ScanSettings: Codable {

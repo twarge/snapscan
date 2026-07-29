@@ -12,7 +12,7 @@ name: Release
 #   ASC_ISSUER_ID  App Store Connect issuer ID
 #   ASC_KEY_P8     Contents of the AuthKey_<KEYID>.p8 file
 # Create the key at App Store Connect → Users and Access → Integrations →
-# App Store Connect API, with the App Manager role (needed for cloud
+# App Store Connect API, with the Admin role (needed for cloud
 # signing). A "Developer ID Application" certificate must exist for the
 # team (create once in Xcode → Settings → Accounts if cloud signing can't).
 
@@ -29,7 +29,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build:
+    name: CI prerequisite
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: build
     runs-on: macos-26
     timeout-minutes: 60
     steps:

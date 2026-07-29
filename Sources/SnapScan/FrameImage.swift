@@ -13,8 +13,13 @@ nonisolated enum FrameImage {
         case mono1
     }
 
+    /// - Parameter inverted: the scanner returns reflectance inverted (paper
+    ///   reads near 0, ink near 255), so the native driver asks for the
+    ///   values to be flipped. Done via CGImage's decode array, which costs
+    ///   nothing — no pixel copy.
     static func make(
-        pixels: Data, width: Int, height: Int, bytesPerRow: Int, format: PixelFormat
+        pixels: Data, width: Int, height: Int, bytesPerRow: Int, format: PixelFormat,
+        inverted: Bool = false
     ) -> CGImage? {
         guard width > 0, height > 0, pixels.count >= bytesPerRow * height else { return nil }
         let data = pixels.count == bytesPerRow * height
@@ -39,6 +44,11 @@ nonisolated enum FrameImage {
             bitsPerPixel = 1
             colorSpace = CGColorSpaceCreateDeviceGray()
             decodeArray = [1, 0]  // scanner packs 1 = black; CG gray is 0 = black
+        }
+
+        if inverted {
+            let components = format == .rgb24 ? 3 : 1
+            decodeArray = Array(repeating: [1, 0], count: components).flatMap { $0 }
         }
 
         guard let provider = CGDataProvider(data: Data(data) as CFData) else { return nil }

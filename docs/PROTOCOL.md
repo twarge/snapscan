@@ -172,6 +172,11 @@ The session that produced this capture asked the backend for **lineart**,
 yet the transfer is full color: grayscale and lineart are synthesized on
 the host, not by the scanner.
 
+**Values are inverted.** The device returns inverted reflectance: blank
+paper reads near 0 and ink near 255. A driver must flip the values
+(measured on a native scan: mean brightness 9 before inversion, 245
+after). CGImage's decode array does this at no cost.
+
 **No JPEG.** No SOI marker (`FF D8`) appears anywhere in the captured
 data. A quantization-table download still occurs during setup (the SEND
 in §4.1), so JPEG may be reachable in some configuration, but it is not
@@ -293,7 +298,32 @@ never announced in advance. A driver must therefore treat the line count
 from the pixel-size read as a ceiling and size the final image from the
 data actually received — which is what a streaming reader does anyway.
 
-### 6.1 Still open
+## 7. Initialization sequence [capture]
+
+The device will not scan until this runs (observed identically in every
+capture, and confirmed by a native implementation):
+
+1. **SEND DIAGNOSTIC** with the 16-byte ASCII string `GET DEVICE ID`
+   (space-padded), then **READ DIAGNOSTIC** (10 bytes). Diagnostics on
+   this device are an ASCII command channel.
+2. **TEST UNIT READY**, then a sensor read (vendor `0xC2`).
+3. **SEND DIAGNOSTIC** with `SET PRE READMODE` plus 16 bytes of binary
+   parameters: X and Y resolution (16-bit each), scan width and length
+   (32-bit, 1/1200 in), composition `0x05`, then `00 00 E4`.
+4. **MODE SELECT** ×6 — pages `0x3C`, `0x38`, `0x37`, `0x39`, `0x3A`,
+   `0x33`. Only `0x3A` carries data in our captures (`80 C0`); the
+   others are written with a zero body. Page `0x39` has an 8-byte body
+   (14-byte list); the rest have 6 (12-byte list).
+5. **SET WINDOW** for each window to be scanned (§5).
+6. **SEND** with data type `0x88`: a 138-byte table (8-byte header plus
+   two 64-byte quantization tables). Constant across captures; replay
+   verbatim.
+7. **vendor `0xF1`** subcommand `0x05`, then a final sensor read.
+
+Then the scan proper (§4.2) may begin. Teardown after a batch uses
+vendor `0xF1` subcommand `0x04` followed by a MODE SELECT.
+
+### 7.1 Still open
 
 - Whether any mode or resolution yields JPEG-compressed data (the
   quantization table is downloaded in every session, yet no capture has
