@@ -114,6 +114,30 @@ paper sensors; simplex and duplex scans; each color mode; 150/300/600
 dpi (the >300 path differs); auto paper size (ALD + black background);
 and an error case (feeder empty).
 
+## Status: phases 1–4 complete
+
+The native driver works on real hardware. `USBTransport` (IOUSBHost) and
+`ScannerCommands` implement the framing and SCSI layer; `NativeScanner`
+runs the full pipeline. Verified: enumeration, sensors, simplex scanning
+at 300 dpi, and **duplex** — both sides at 2550 × 3300, correct tone and
+geometry, no SANE in the process. `DriverProbe` is the bring-up tool.
+
+Remaining before the GPL stack can be removed:
+
+1. **Oracle comparison** — scan one sheet through SANE and through the
+   native driver at identical settings and compare pixels, to catch
+   subtle differences (colour calibration, edge rows) that eyeballing
+   misses.
+2. **Switch `ScannerEngine`** from `SaneSession` to `NativeScanner`
+   (the interfaces already match) and exercise the app end to end:
+   hardware button, auto paper size, cancel, error paths.
+3. **Delete** the vendored stack, xcframework, embed phase, and
+   dependency scripts; relicense Apache-2.0.
+
+Smaller gaps, none blocking: the `0xC2` sensor bit assignments (the app
+polls the Scan button through this), MODE SELECT page semantics for
+double-feed and background colour, and jam/cover-open sense codes.
+
 ## Phases and effort
 
 | Phase | Work | Estimate |
