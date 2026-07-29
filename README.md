@@ -132,13 +132,14 @@ and uses the async Swift Vision API.
 ## CI and releases
 
 GitHub Actions builds and tests every push (`.github/workflows/ci.yml`,
-ad-hoc signed, app attached as a CI artifact). Pushing a `vX.Y.Z` tag
-runs the release workflow: Developer ID signing, notarization, stapling,
-and a GitHub Release with the zipped app. The release job needs five
-repository secrets (see the comments in
-`.github/workflows/release.yml`): the Developer ID Application
-certificate (.p12, base64) and its password, plus an App Store Connect
-API key (ID, issuer ID, and .p8 contents) for `notarytool`.
+ad-hoc signed, app attached as a CI artifact). Pushing a `vX.Y.Z` tag —
+or running the Release workflow manually — archives with cloud-managed
+Developer ID signing, notarizes, staples, and publishes a GitHub
+Release with the zipped app. One set of secrets drives all of it (an
+App Store Connect API key: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`
+— see the comments in `.github/workflows/release.yml`); there is no
+certificate to export or rotate, since `xcodebuild` manages signing via
+the API key.
 
 **Why not the Mac App Store:** the bundled sane-backends is GPL, and its
 copyright belongs to the SANE project — the App Store's terms impose
