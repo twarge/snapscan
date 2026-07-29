@@ -117,6 +117,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath build/SnapScan.xcarchive \
+            CURRENT_PROJECT_VERSION='${{ github.run_number }}.${{ github.run_attempt }}' \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_"$ASC_KEY_ID".p8 \
             -authenticationKeyID "$ASC_KEY_ID" \
