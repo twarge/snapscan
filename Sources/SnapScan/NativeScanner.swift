@@ -253,7 +253,10 @@ actor NativeScanner {
             ScannerCommands.sendDiagnostic(parameterLength: preRead.count),
             dataOut: preRead)
 
-        for page in ScannerCommands.setupModePages {
+        // Auto paper size relies on the scanner ending the frame at the
+        // sheet's trailing edge; that is a mode page, not a window field.
+        let autoLength = settings.paperSize == .auto
+        for page in ScannerCommands.setupModePages(autoLength: autoLength) {
             let payload = ScannerCommands.modePage(code: page.code, data: page.data)
             try run(
                 String(format: "mode page %02x", page.code),

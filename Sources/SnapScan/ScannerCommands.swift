@@ -163,16 +163,24 @@ nonisolated enum ScannerCommands {
         return Data(payload)
     }
 
-    /// The pages written before every scan, in order. Only page 0x3A carries
-    /// non-zero data in our captures (`80 c0`); the others are written empty.
-    static let setupModePages: [(code: UInt8, data: [UInt8])] = [
-        (0x3C, []),
-        (0x38, []),
-        (0x37, []),
-        (0x39, [0, 0, 0, 0, 0, 0, 0, 0]),
-        (0x3A, [0x80, 0xC0]),
-        (0x33, []),
-    ]
+    /// The pages written before every scan, in order.
+    ///
+    /// Page `0x3C` byte 1 = `0x80` enables **auto length detection**: the
+    /// scanner then ends the frame at the paper's trailing edge instead of
+    /// filling the requested window. Established by diffing an ALD capture
+    /// against a fixed-size one — it was the only page that changed.
+    /// Page `0x3A`'s `80 c0` is constant in every capture; the rest are
+    /// written with a zero body.
+    static func setupModePages(autoLength: Bool) -> [(code: UInt8, data: [UInt8])] {
+        [
+            (0x3C, autoLength ? [0x00, 0x80] : []),
+            (0x38, []),
+            (0x37, []),
+            (0x39, [0, 0, 0, 0, 0, 0, 0, 0]),
+            (0x3A, [0x80, 0xC0]),
+            (0x33, []),
+        ]
+    }
 
     /// The 138-byte table downloaded with SEND type 0x88 before scanning —
     /// an 8-byte header plus two 64-byte quantization tables. Replayed

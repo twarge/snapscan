@@ -309,6 +309,14 @@ protocol-level confirmation of §4.3.
 
 ## 6. Auto length detection [capture]
 
+**ALD is enabled by MODE SELECT page `0x3C`, body byte 1 = `0x80`** —
+the full page reads `00 00 00 00 3c 06 00 80 00 00 00 00` versus
+`… 3c 06 00 00 …` for a fixed-size scan. Established by diffing an ALD
+capture against a fixed-size one; it was the only page that differed.
+Without it the scanner fills the whole requested window, so a driver
+that merely asks for a long window gets a long image, not a
+paper-length one.
+
 With ALD enabled (`05-ald.log`, 300 dpi colour):
 
 - The host sets the window **length to the maximum** (`0xA1A8` = 41,384
