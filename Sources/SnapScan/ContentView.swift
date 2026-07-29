@@ -336,30 +336,29 @@ struct ContentView: View {
             TextField("Document name", text: $draftName)
                 .textFieldStyle(.roundedBorder)
                 .focused($nameFieldFocused)
-                .onSubmit {
-                    engine.renameDocument(to: draftName)
-                    nameFieldFocused = false
-                    // Return doubles as the Done button when it's available.
-                    if engine.documentOpen, !engine.pages.isEmpty, !engine.isBusy {
-                        engine.done()
-                    }
-                }
+                .onSubmit { finalizeDocument() }
             Text(".pdf")
                 .foregroundStyle(.secondary)
-            if engine.documentOpen, !engine.pages.isEmpty {
-                Button("Done") {
-                    engine.renameDocument(to: draftName)
-                    engine.done()
-                }
+            Button("Done") { finalizeDocument() }
                 .buttonStyle(.borderedProminent)
-                .disabled(engine.isBusy)
-                .help("Finish this document — the next scan starts a new PDF")
-            }
+                .disabled(engine.isBusy || engine.pages.isEmpty)
+                .help("Commit the name and finish — shows the saved PDF")
         }
         .font(.title3)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    /// Done: commit the typed name, finalize the document, and switch the
+    /// view to the finished PDF.
+    private func finalizeDocument() {
+        engine.renameDocument(to: draftName)
+        nameFieldFocused = false
+        guard !engine.isBusy, !engine.pages.isEmpty else { return }
+        let finishedURL = engine.documentURL
+        engine.done()
+        selection = finishedURL
     }
 
     private var emptyState: some View {
@@ -522,9 +521,23 @@ struct ContentView: View {
 
     // MARK: - Toolbar
 
+    private var paperSizeBinding: Binding<PaperSize> {
+        Binding(
+            get: { engine.settings.paperSize },
+            set: { engine.settings.paperSize = $0 })
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            Picker("Paper", selection: paperSizeBinding) {
+                ForEach(PaperSize.allCases) { size in
+                    Text(size.rawValue).tag(size)
+                }
+            }
+            .pickerStyle(.menu)
+            .disabled(engine.isBusy)
+            .help("Paper size")
             scannerStatusIndicator
             if case .scanning = engine.status {
                 Button {
