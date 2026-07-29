@@ -345,6 +345,16 @@ final class ScannerEngine {
         lastError = nil
     }
 
+    /// Adopts a user-chosen scans folder: the security-scoped bookmark from
+    /// the open panel's selection is what carries sandbox access to it.
+    func setDestination(_ url: URL) {
+        settings.destinationBookmark = try? url.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil)
+        settings.destinationPath = (url.path as NSString).abbreviatingWithTildeInPath
+    }
+
     /// Renames the current document (on disk once it exists).
     func renameDocument(to rawName: String) {
         guard let document = current else { return }

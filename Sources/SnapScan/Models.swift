@@ -68,10 +68,14 @@ nonisolated struct ScanSettings: Codable {
     var skipBlankPages: Bool = false
     var autoRotate: Bool = true
     var hardwareButton: Bool = true
-    var destinationPath: String = "~/Documents/Scans"
+    /// Downloads works sandboxed without a grant (downloads entitlement),
+    /// so it's a safe default even if the first-run prompt is dismissed.
+    var destinationPath: String = "~/Downloads"
     /// Security-scoped bookmark for a user-chosen folder outside the sandbox
     /// container. Typed paths can't confer sandbox access; the picker can.
     var destinationBookmark: Data?
+    /// The first-run folder prompt has been shown.
+    var promptedForFolder: Bool = false
     var appendScans: Bool = true
     var menuBarOnly: Bool = false
     var launchAtLogin: Bool = false
@@ -116,6 +120,9 @@ nonisolated struct ScanSettings: Codable {
             try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? defaults.launchAtLogin
         destinationBookmark =
             try c.decodeIfPresent(Data.self, forKey: .destinationBookmark)
+        promptedForFolder =
+            try c.decodeIfPresent(Bool.self, forKey: .promptedForFolder)
+            ?? defaults.promptedForFolder
     }
 
     private static let defaultsKey = "scanSettings"

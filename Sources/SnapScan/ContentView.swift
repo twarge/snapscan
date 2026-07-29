@@ -39,6 +39,7 @@ struct ContentView: View {
         .navigationSubtitle(subtitle)
         .task {
             WindowOpener.shared.openWindowAction = openWindow
+            promptForDestinationIfFirstRun()
             library.setMonitoredFolder(engine.settings.destinationURL)
         }
         .onChange(of: engine.settings.destinationPath) {
@@ -49,6 +50,16 @@ struct ContentView: View {
             if engine.documentURL != nil { selection = nil }
         }
         .onChange(of: engine.pages.count) { library.refresh() }
+        .onChange(of: library.documents) {
+            // The previewed scan may have been deleted or moved away; don't
+            // keep showing a file that no longer exists.
+            guard let selected = selection else { return }
+            let stillKnown =
+                library.documents.contains { $0.url == selected }
+                || engine.documentURL == selected
+                || engine.backgroundDocuments.contains { $0.url == selected }
+            if !stillKnown { selection = nil }
+        }
         .onChange(of: engine.documentDisplayName) { _, newName in
             // Follow the engine's name unless the user is mid-edit.
             if draftName == lastEngineName { draftName = newName }
@@ -69,6 +80,29 @@ struct ContentView: View {
         .sheet(item: $enlargedPage) { page in
             pagePreview(page)
         }
+    }
+
+    /// First run: ask where scans should go. The selection doubles as the
+    /// sandbox grant for that folder (stored as a security-scoped bookmark);
+    /// cancelling falls back to ~/Downloads, which the downloads entitlement
+    /// covers without a grant.
+    private func promptForDestinationIfFirstRun() {
+        guard !engine.settings.promptedForFolder,
+            engine.settings.destinationBookmark == nil
+        else { return }
+        let panel = NSOpenPanel()
+        panel.message = "Choose where SnapScan saves your scanned PDFs."
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = FileManager.default.urls(
+            for: .downloadsDirectory, in: .userDomainMask
+        ).first
+        panel.prompt = "Use This Folder"
+        if panel.runModal() == .OK, let url = panel.url {
+            engine.setDestination(url)
+        }
+        engine.settings.promptedForFolder = true
     }
 
     private var subtitle: String {

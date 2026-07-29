@@ -126,12 +126,6 @@ struct SettingsView: View {
         panel.directoryURL = engine.settings.destinationURL
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        // The security-scoped bookmark is what actually carries sandbox
-        // access to the chosen folder; the path is for display.
-        engine.settings.destinationBookmark = try? url.bookmarkData(
-            options: [.withSecurityScope],
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil)
-        engine.settings.destinationPath = (url.path as NSString).abbreviatingWithTildeInPath
+        engine.setDestination(url)
     }
 }
