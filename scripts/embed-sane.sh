@@ -1,6 +1,6 @@
 #!/bin/bash
 # Embeds the vendored SANE runtime, licenses, and icon into an app bundle's
-# Contents directory. Shared by scripts/make-app.sh and the Xcode build phase.
+# Contents directory. Runs as the app target's "Embed SANE Runtime" phase.
 # The app links libsane directly (in-process scanning): libsane and libusb go
 # to Contents/Frameworks; the dlopen'd fujitsu backend and its config live
 # under Resources/sane (found via SANE_CONFIG_DIR / LD_LIBRARY_PATH set by

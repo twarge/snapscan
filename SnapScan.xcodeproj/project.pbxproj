@@ -29,6 +29,8 @@
 		AB0200000000000000000006 /* FrameImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000006 /* FrameImageTests.swift */; };
 		AB0600000000000000000001 /* SANE.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF0600000000000000000001 /* SANE.xcframework */; };
 		AB0600000000000000000002 /* SANE.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AF0600000000000000000001 /* SANE.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		AB0700000000000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0700000000000000000001 /* main.swift */; };
+		AB0700000000000000000002 /* SANE.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF0600000000000000000001 /* SANE.xcframework */; };
 		AB0200000000000000000001 /* FileNameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000001 /* FileNameTests.swift */; };
 		AB0200000000000000000002 /* OrientationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000002 /* OrientationTests.swift */; };
 		AB0200000000000000000003 /* PDFBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000003 /* PDFBuilderTests.swift */; };
@@ -68,6 +70,8 @@
 		AF0400000000000000000003 /* SnapScan.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SnapScan.entitlements; sourceTree = "<group>"; };
 		AF0200000000000000000006 /* FrameImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameImageTests.swift; sourceTree = "<group>"; };
 		AF0600000000000000000001 /* SANE.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = SANE.xcframework; sourceTree = "<group>"; };
+		AF0700000000000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		AF0500000000000000000003 /* SaneSmokeTest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = SaneSmokeTest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF0200000000000000000001 /* FileNameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileNameTests.swift; sourceTree = "<group>"; };
 		AF0200000000000000000002 /* OrientationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationTests.swift; sourceTree = "<group>"; };
 		AF0200000000000000000003 /* PDFBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFBuilderTests.swift; sourceTree = "<group>"; };
@@ -79,6 +83,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB0700000000000000000002 /* SANE.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A30000000000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -103,6 +115,7 @@
 			children = (
 				A20000000000000000000002 /* SnapScan */,
 				A20000000000000000000003 /* SnapScanTests */,
+				A20000000000000000000007 /* SaneSmokeTest */,
 				A20000000000000000000004 /* Support */,
 				A20000000000000000000005 /* Frameworks */,
 				A20000000000000000000006 /* Products */,
@@ -133,6 +146,15 @@
 			);
 			name = SnapScan;
 			path = Sources/SnapScan;
+			sourceTree = "<group>";
+		};
+		A20000000000000000000007 /* SaneSmokeTest */ = {
+			isa = PBXGroup;
+			children = (
+				AF0700000000000000000001 /* main.swift */,
+			);
+			name = SaneSmokeTest;
+			path = Sources/SaneSmokeTest;
 			sourceTree = "<group>";
 		};
 		A20000000000000000000003 /* SnapScanTests */ = {
@@ -172,6 +194,7 @@
 			children = (
 				AF0500000000000000000001 /* SnapScan.app */,
 				AF0500000000000000000002 /* SnapScanTests.xctest */,
+				AF0500000000000000000003 /* SaneSmokeTest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -179,6 +202,22 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A10000000000000000000003 /* SaneSmokeTest */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A40000000000000000000004 /* Build configuration list for PBXNativeTarget "SaneSmokeTest" */;
+			buildPhases = (
+				A50000000000000000000003 /* Sources */,
+				A30000000000000000000003 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SaneSmokeTest;
+			productName = SaneSmokeTest;
+			productReference = AF0500000000000000000003 /* SaneSmokeTest */;
+			productType = "com.apple.product-type.tool";
+		};
 		A10000000000000000000001 /* SnapScan */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A40000000000000000000002 /* Build configuration list for PBXNativeTarget "SnapScan" */;
@@ -249,6 +288,7 @@
 			targets = (
 				A10000000000000000000001 /* SnapScan */,
 				A10000000000000000000002 /* SnapScanTests */,
+				A10000000000000000000003 /* SaneSmokeTest */,
 			);
 		};
 /* End PBXProject section */
@@ -300,6 +340,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A50000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB0700000000000000000001 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A50000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -398,6 +446,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				ARCHS = arm64;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
@@ -450,6 +499,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ARCHS = arm64;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -543,6 +593,32 @@
 		};
 /* End XCBuildConfiguration section */
 
+		AE0000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/vendor/lib",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		AE0000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/vendor/lib",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 /* Begin XCConfigurationList section */
 		A40000000000000000000001 /* Build configuration list for PBXProject "SnapScan" */ = {
 			isa = XCConfigurationList;
@@ -558,6 +634,15 @@
 			buildConfigurations = (
 				AE0000000000000000000003 /* Debug */,
 				AE0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A40000000000000000000004 /* Build configuration list for PBXNativeTarget "SaneSmokeTest" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE0000000000000000000007 /* Debug */,
+				AE0000000000000000000008 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

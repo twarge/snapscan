@@ -65,21 +65,18 @@ the system login items (the app should live in /Applications for that).
 ## Building
 
 ```bash
-scripts/build-sane.sh        # downloads + builds libusb and sane-backends into vendor/
-scripts/make-xcframework.sh  # wraps vendored libsane as SANE.xcframework (Xcode builds)
-scripts/make-app.sh          # swift build + assembles dist/SnapScan.app
-swift test                   # frame/PDF/orientation/filename tests
-swift run SaneSmokeTest      # headless hardware check of the in-process SANE stack
+make          # vendored SANE (first run) + SANE.xcframework + dist/SnapScan.app
+make test     # unit tests (xcodebuild test)
+make smoke    # headless hardware check (quit SnapScan first — it holds the scanner)
 ```
 
-Or open `SnapScan.xcodeproj` — the app target runs, debugs, and tests
-(⌘U) from Xcode, and an "Embed SANE Runtime" build phase calls
-`scripts/embed-sane.sh` so Xcode-built bundles are just as self-contained.
-Both builds share the same sources; run `scripts/build-sane.sh` once before
-either. Requires Xcode 16+ (Swift 6.2 tools, macOS 15 target) and
-pkg-config. During development, `swift run` from the repo root uses
-`vendor/` directly; bundled apps use the copy in
-`Contents/Resources/sane`.
+Xcode is the only build system: `make` drives the same `SnapScan.xcodeproj`
+that Build & Run uses — same targets, signing, entitlements, and the
+"Embed SANE Runtime" phase (`scripts/embed-sane.sh`) — and copies the
+Release product to `dist/`. Day-to-day, just open the project and ⌘R;
+run `make` (or the two scripts it sequences) once first so the vendored
+SANE stack and `SANE.xcframework` exist. Requires Xcode 16+ (macOS 15
+target) and pkg-config.
 
 The app is **sandboxed** (USB device entitlement for the scanner,
 user-selected file access for the scans folder — choosing a folder in
@@ -96,7 +93,7 @@ and uses the async Swift Vision API.
   actor so Stop works mid-read. The dll loader finds the bundled backend
   and config via `SANE_CONFIG_DIR`/`LD_LIBRARY_PATH` set before
   `sane_init`. The `CSane` Clang module comes from `SANE.xcframework`'s
-  headers in Xcode and `Sources/CSane` under SwiftPM.
+  bundled headers and module map.
 - `Sources/SnapScan/ScannerEngine.swift` — app-facing state machine:
   document lifecycle, direct-save, post-processing, and the hardware-button
   watch (reading the fujitsu `scan` sensor through the open handle, an
