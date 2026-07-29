@@ -3,9 +3,8 @@ name: Release
 # Developer ID signed, notarized, stapled app on a GitHub Release. Run it
 # manually from the Actions tab, or push a version tag like v1.2.
 #
-# NOT the App Store: bundled sane-backends is GPL (third-party copyright),
-# and App Store terms conflict with the GPL — Developer ID + notarization
-# is the standard channel for GPL Mac apps.
+# Developer ID + notarization, for direct distribution. (The App Store is
+# now also possible: the app bundles no third-party code and is sandboxed.)
 #
 # Required repository secrets (drive signing and notarization):
 #   ASC_KEY_ID     App Store Connect API key ID
@@ -82,12 +81,6 @@ jobs:
           printf "%s\n" "$CERTIFICATE_SUBJECT" |
             grep -Eq "OU[[:space:]]*=[[:space:]]*$EXPECTED_TEAM_ID([/,]|$)" ||
             { echo "::error::The Apple Development certificate belongs to a different team; expected $EXPECTED_TEAM_ID"; exit 1; }
-
-      - name: Build vendored SANE + xcframework
-        run: |
-          pkg-config --version || brew install pkg-config
-          scripts/build-sane.sh
-          scripts/make-xcframework.sh
 
       - name: Write export options
         run: |

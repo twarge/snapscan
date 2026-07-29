@@ -3,25 +3,26 @@
 A small macOS app that scans documents with a Fujitsu ScanSnap iX500 and saves
 them as multi-page PDFs.
 
-ScanSnap scanners don't speak TWAIN or Apple's Image Capture protocol, so this
-app drives the scanner through [SANE](http://www.sane-project.org)'s `fujitsu`
-backend over **USB**, calling the SANE C API **in-process** (libsane is
-linked directly, packaged as `SANE.xcframework` for Xcode). That's what makes
-pages appear live in the window while the sheet is still feeding. The whole
-SANE stack (libusb + sane-backends) is built from source and embedded inside
-the app bundle — no Homebrew, drivers, or ScanSnap Home required at runtime.
+ScanSnap scanners don't speak TWAIN or Apple's Image Capture protocol, so
+SnapScan talks to the iX500 **directly over USB** with its own driver:
+SCSI-2 scanner commands in Fujitsu's USB framing, spoken through
+IOUSBLib. There are **no third-party components** — no SANE, no libusb,
+no drivers or ScanSnap Home to install. The protocol was derived from USB
+captures of the scanner itself; see [docs/PROTOCOL.md](docs/PROTOCOL.md)
+for the specification and [docs/CLEANROOM-STUDY.md](docs/CLEANROOM-STUDY.md)
+for how and why it was written.
 
 ## Using it
 
 1. Connect the iX500 via USB and open the feeder flap (that powers it on).
-2. Launch `dist/SnapScan.app` (copy it to /Applications if you like — the
-   bundle is self-contained).
+2. Launch SnapScan (copy it to /Applications if you like — the bundle is
+   self-contained).
 3. Load paper, then press **Scan** in the app — or the **hardware Scan
    button on the scanner itself** (SnapScan polls it about once a second
    while idle).
 4. Pages are auto-rotated upright, assembled into a PDF at true physical
    size, and saved directly into your scans folder (default
-   `~/Documents/Scans`). No save dialog.
+   `~/Downloads`). No save dialog.
 
 The sidebar lists the scans this app has made (tracked by file bookmarks,
 so a scan moved or renamed in Finder keeps its place; entries whose file is
@@ -46,7 +47,7 @@ with the proposed name selected, so just typing and pressing return renames
 the PDF.
 
 **Auto paper size** (Paper ▸ Auto): scans full-width with hardware length
-detection and the scanner's black background, crops to the detected paper,
+detection, crops to the detected paper,
 and snaps to a standard size (Letter, A4, Legal, A5, photo sizes, …) when
 within ~5 mm per axis — receipts and other odd sizes keep their exact
 measured dimensions. Snapped pages are centered on the standard-size PDF
@@ -65,20 +66,16 @@ the system login items (the app should live in /Applications for that).
 ## Building
 
 ```bash
-make          # vendored SANE (first run) + SANE.xcframework + dist/SnapScan.app
-make test     # unit tests (xcodebuild test)
-make smoke    # headless hardware check (quit SnapScan first — it holds the scanner)
+make          # build the app (Release); prints the product path
+make test     # unit tests
+make probe    # headless driver check against the scanner (quit SnapScan first)
 ```
 
-Xcode is the only build system, and it builds the dependencies too: a
-scheme pre-action compiles the vendored SANE stack and generates
-`SANE.xcframework` when they're missing (the source tarballs are in
-`vendor/src`, so no network is needed), and a Dependencies aggregate
-target backstops it. **A fresh checkout is just: open the project, ⌘R**
-— the first build takes ~3 minutes for the SANE stack, then it's never
-rebuilt. The app lives only where Xcode puts it (DerivedData; `make`
-prints the product path, or use Product ▸ Show Build Folder). Requires
-Xcode 16+ (macOS 15 target) and pkg-config.
+Xcode is the only build system, and there is nothing to build first:
+**a fresh checkout is just open the project and ⌘R.** No vendored
+libraries, no dependency scripts, no package manager. The app lives only
+where Xcode puts it (DerivedData; `make` prints the product path, or use
+Product ▸ Show Build Folder). Requires Xcode 16+ (macOS 15 target).
 
 The app is **sandboxed** (USB device entitlement for the scanner,
 user-selected file access for the scans folder — choosing a folder in
@@ -88,18 +85,20 @@ and uses the async Swift Vision API.
 
 ## How the pieces fit
 
-- `Sources/SnapScan/SaneSession.swift` — the in-process SANE layer: an
-  actor owning the blocking C calls (`sane_open`, `sane_start`, streaming
-  `sane_read`), emitting partial-page images as rows arrive and complete
-  pages per sheet. `sane_cancel` is async-safe by spec and bypasses the
-  actor so Stop works mid-read. The dll loader finds the bundled backend
-  and config via `SANE_CONFIG_DIR`/`LD_LIBRARY_PATH` set before
-  `sane_init`. The `CSane` Clang module comes from `SANE.xcframework`'s
-  bundled headers and module map.
+- `Sources/SnapScan/USBTransport.swift` — the USB layer: finds the
+  scanner, claims its interface, and speaks the 31-byte command / data /
+  13-byte status framing. Built on IOUSBLib because IOUSBHost's user
+  client cannot be opened inside the App Sandbox.
+- `Sources/SnapScan/ScannerCommands.swift` — SCSI command builders and
+  response parsers: window descriptors in 1/1200-inch units, mode pages,
+  sense decoding, sensor bits.
+- `Sources/SnapScan/NativeScanner.swift` — the scan pipeline: device
+  setup, feed, streaming reads with live partial pages, duplex window
+  alternation, and end-of-page handling.
 - `Sources/SnapScan/ScannerEngine.swift` — app-facing state machine:
   document lifecycle, direct-save, post-processing, and the hardware-button
-  watch (reading the fujitsu `scan` sensor through the open handle, an
-  in-process option read instead of spawning anything). Straightening runs
+  watch (reading the Scan-button sensor over the open USB connection).
+  Straightening runs
   per page, concurrently, starting the moment each page lands (spinner on
   the page's cell); the scanner frees as soon as the batch ends, so the
   next scan can start while the previous document is still processing —
@@ -116,16 +115,12 @@ and uses the async Swift Vision API.
   corrupts edge pixels). "Straighten pages" deskews in-app from the median
   tilt of Vision's text-line quads, gated on evidence (≥4 wide lines,
   consistent angles, 0.25–6°) — sparse pages are deliberately left alone.
-  SANE's `--swdeskew` is not used: its estimator tilts straight-but-sparse
-  pages.
+  (A backend-side deskew was tried and abandoned: its estimator tilts
+  straight-but-sparse pages.)
 - `Sources/SnapScan/FrameImage.swift` — builds CGImages from raw scanner
   frames (including partial pages mid-scan).
 - `Sources/SnapScan/PDFBuilder.swift` — assembles pages into a PDF at true
   physical size (pixels ÷ dpi × 72 points), centering size-snapped pages.
-- `scripts/embed-sane.sh` (build phase) — copies the SANE backend, config,
-  licenses, and icon into the bundle, rewrites dylib install names to
-  `@rpath`/`@loader_path`, writes a minimal `dll.conf` (just `fujitsu`),
-  and signs the pieces with the app's identity.
 - `scripts/make-icon.swift` — the app icon's source; only run if
   `Support/AppIcon.icns` is ever deleted.
 
@@ -141,31 +136,19 @@ App Store Connect API key: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`
 certificate to export or rotate, since `xcodebuild` manages signing via
 the API key.
 
-**Why not the Mac App Store:** the bundled sane-backends is GPL, and its
-copyright belongs to the SANE project — the App Store's terms impose
-restrictions the GPL forbids (the well-known VLC conflict), so App Store
-distribution would violate that license. Developer ID + notarization is
-the standard, fully compatible channel for GPL Mac apps.
 
 ## License
 
 Copyright © 2026 Tom Kornack.
 
-SnapScan is free software, licensed under the GNU General Public License,
-version 2 or (at your option) any later version — see [LICENSE](LICENSE).
-It is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE.
-
-The app bundles sane-backends (GPL-2.0-or-later) and libusb
-(LGPL-2.1-or-later); see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)
-for details and source availability.
+Licensed under the Apache License, Version 2.0 — see [LICENSE](LICENSE).
+Distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND. SnapScan bundles no third-party code.
 
 ## Limitations
 
-- USB only — SANE cannot reach an iX500 over Wi-Fi (that protocol is
-  proprietary).
-- One scanner: the app picks the first SANE device it finds.
-- Only the iX500's backend is bundled; other SANE-supported scanners would
-  need their backends added in `scripts/build-sane.sh` (`BACKENDS=…`) and
-  `scripts/embed-sane.sh`.
+- USB only — the iX500's Wi-Fi mode uses a proprietary protocol this
+  driver doesn't speak.
+- One scanner: the app uses the first iX500 it finds on USB.
+- The driver targets the iX500 specifically (USB 0x04C5:0x132B). Other
+  ScanSnap models speak a similar dialect but are untested.

@@ -1,1 +1,0 @@
-f99205c903dfe2fb8990f0c531232c9a00ec9c2c66ac7cb0ce50b4af9f407a72  sane-backends-1.4.0.tar.gz

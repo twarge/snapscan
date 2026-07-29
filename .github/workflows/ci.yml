@@ -24,12 +24,6 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Build vendored SANE + xcframework
-        run: |
-          pkg-config --version || brew install pkg-config
-          scripts/build-sane.sh
-          scripts/make-xcframework.sh
-
       # Ad-hoc signing (not CODE_SIGNING_ALLOWED=NO): the test host must
       # carry its sandbox entitlements, and the artifact stays launchable.
       - name: Build (Release)

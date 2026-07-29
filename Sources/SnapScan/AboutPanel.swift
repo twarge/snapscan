@@ -37,42 +37,27 @@ enum AboutPanel {
         text.append(
             NSAttributedString(
                 string: """
-                    SnapScan is free software: you can redistribute it and/or modify it \
-                    under the terms of the GNU General Public License as published by the \
-                    Free Software Foundation, either version 2 of the License, or (at your \
-                    option) any later version. It is distributed WITHOUT ANY WARRANTY; \
-                    see the license for details.\n\n
+                    Licensed under the Apache License, Version 2.0. Distributed on \
+                    an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.\n\n
                     """,
                 attributes: secondary))
+        text.append(NSAttributedString(string: "See the ", attributes: secondary))
+        text.append(link("full license", url: licenseURL, attributes: secondary))
         text.append(
             NSAttributedString(
-                string: "Bundles sane-backends 1.4.0 (",
-                attributes: secondary))
-        text.append(link("GPL-2.0-or-later", url: gplURL, attributes: secondary))
-        text.append(NSAttributedString(string: ") and libusb 1.0.27 (", attributes: secondary))
-        text.append(link("LGPL-2.1-or-later", url: lgplURL, attributes: secondary))
-        text.append(
-            NSAttributedString(
-                string: ").\nLicense texts are included in the app bundle.",
+                string: ". The scanner is driven directly over USB; no third-party "
+                    + "components are bundled.",
                 attributes: secondary))
         return text
     }
 
-    /// Prefer the copies shipped inside the bundle; fall back to gnu.org.
-    private static var gplURL: URL {
-        bundledLicense("LICENSE")
-            ?? URL(string: "https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt")!
-    }
-
-    private static var lgplURL: URL {
-        bundledLicense("LGPL-2.1.txt")
-            ?? URL(string: "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt")!
-    }
-
-    private static func bundledLicense(_ name: String) -> URL? {
-        guard let resources = Bundle.main.resourceURL else { return nil }
-        let url = resources.appendingPathComponent("licenses/\(name)")
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    /// Prefer the copy shipped inside the bundle; fall back to apache.org.
+    private static var licenseURL: URL {
+        if let resources = Bundle.main.resourceURL {
+            let bundled = resources.appendingPathComponent("LICENSE")
+            if FileManager.default.fileExists(atPath: bundled.path) { return bundled }
+        }
+        return URL(string: "https://www.apache.org/licenses/LICENSE-2.0")!
     }
 
     private static func link(
