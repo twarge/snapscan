@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    # Needs Xcode 26+ (Swift 6.2: main-actor default isolation).
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          pkg-config --version || brew install pkg-config
+
+      - name: Build vendored SANE + xcframework
+        run: |
+          scripts/build-sane.sh
+          scripts/make-xcframework.sh
+
+      # CI has no signing identity; ad-hoc signing keeps the sandbox +
+      # entitlements intact for testing.
+      - name: Build (Release, ad-hoc signed)
+        run: |
+          set -o pipefail
+          xcodebuild -project SnapScan.xcodeproj -scheme SnapScan \
+            -configuration Release build \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+            | tail -40
+
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild -project SnapScan.xcodeproj -scheme SnapScan test \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+            | tail -60
+
+      - name: Package build artifact
+        run: |
+          PRODUCTS="$(xcodebuild -project SnapScan.xcodeproj -scheme SnapScan \
+            -configuration Release -showBuildSettings 2>/dev/null \
+            | awk '/ BUILT_PRODUCTS_DIR =/{print $3}')"
+          ditto -c -k --keepParent "$PRODUCTS/SnapScan.app" SnapScan-ci.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SnapScan-ci
+          path: SnapScan-ci.zip

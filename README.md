@@ -129,6 +129,23 @@ and uses the async Swift Vision API.
 - `scripts/make-icon.swift` — the app icon's source; only run if
   `Support/AppIcon.icns` is ever deleted.
 
+## CI and releases
+
+GitHub Actions builds and tests every push (`.github/workflows/ci.yml`,
+ad-hoc signed, app attached as a CI artifact). Pushing a `vX.Y.Z` tag
+runs the release workflow: Developer ID signing, notarization, stapling,
+and a GitHub Release with the zipped app. The release job needs five
+repository secrets (see the comments in
+`.github/workflows/release.yml`): the Developer ID Application
+certificate (.p12, base64) and its password, plus an App Store Connect
+API key (ID, issuer ID, and .p8 contents) for `notarytool`.
+
+**Why not the Mac App Store:** the bundled sane-backends is GPL, and its
+copyright belongs to the SANE project — the App Store's terms impose
+restrictions the GPL forbids (the well-known VLC conflict), so App Store
+distribution would violate that license. Developer ID + notarization is
+the standard, fully compatible channel for GPL Mac apps.
+
 ## License
 
 Copyright © 2026 Tom Kornack.

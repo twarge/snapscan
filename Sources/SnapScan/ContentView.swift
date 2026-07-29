@@ -90,6 +90,11 @@ struct ContentView: View {
         guard !engine.settings.promptedForFolder,
             engine.settings.destinationBookmark == nil
         else { return }
+        // A modal panel would hang a headless test host (the app is the
+        // TEST_HOST when running unit tests, including on CI).
+        guard NSClassFromString("XCTestCase") == nil,
+            ProcessInfo.processInfo.environment["SNAPSCAN_SUPPRESS_FIRST_RUN"] == nil
+        else { return }
         let panel = NSOpenPanel()
         panel.message = "Choose where SnapScan saves your scanned PDFs."
         panel.canChooseDirectories = true

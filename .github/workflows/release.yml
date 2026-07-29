@@ -1,0 +1,89 @@
+# Tag vX.Y.Z -> Developer ID signed, notarized, stapled app on a GitHub
+# Release. (Not the App Store: the bundled sane-backends is GPL, whose terms
+# are incompatible with App Store distribution — Developer ID + notarization
+# is the standard channel for GPL Mac apps.)
+#
+# Required repository secrets:
+#   DEVELOPER_ID_CERT_P12        base64 of the "Developer ID Application"
+#                                certificate + key (.p12)
+#   DEVELOPER_ID_CERT_PASSWORD   password for that .p12
+#   APPLE_API_KEY_ID             App Store Connect API key ID (notarization)
+#   APPLE_API_ISSUER_ID          App Store Connect API issuer ID
+#   APPLE_API_KEY_P8             contents of the API key .p8 file
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build vendored SANE + xcframework
+        run: |
+          pkg-config --version || brew install pkg-config
+          scripts/build-sane.sh
+          scripts/make-xcframework.sh
+
+      - name: Import signing certificate
+        env:
+          CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN=build.keychain
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$CERT_P12" | base64 --decode > cert.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import cert.p12 -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          rm cert.p12
+
+      - name: Archive and export (Developer ID)
+        run: |
+          set -o pipefail
+          xcodebuild -project SnapScan.xcodeproj -scheme SnapScan \
+            -configuration Release \
+            -archivePath build/SnapScan.xcarchive archive \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            | tail -40
+          xcodebuild -exportArchive \
+            -archivePath build/SnapScan.xcarchive \
+            -exportOptionsPlist Support/ExportOptions-developer-id.plist \
+            -exportPath build/export | tail -20
+
+      - name: Notarize and staple
+        env:
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          echo "$API_KEY_P8" > apikey.p8
+          ditto -c -k --keepParent build/export/SnapScan.app SnapScan.zip
+          xcrun notarytool submit SnapScan.zip \
+            --key apikey.p8 --key-id "$API_KEY_ID" --issuer "$API_ISSUER_ID" \
+            --wait
+          xcrun stapler staple build/export/SnapScan.app
+          rm apikey.p8 SnapScan.zip
+          ditto -c -k --keepParent build/export/SnapScan.app \
+            "SnapScan-${GITHUB_REF_NAME}.zip"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "SnapScan $GITHUB_REF_NAME" \
+            --generate-notes \
+            "SnapScan-${GITHUB_REF_NAME}.zip"
