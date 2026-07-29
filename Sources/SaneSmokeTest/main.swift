@@ -128,6 +128,14 @@ if let mode = argument("--mode") { setStringOption("mode", mode) }
 if let resolution = argument("--resolution").flatMap(Int.init) {
     setIntOption("resolution", resolution)
 }
+// Auto length detection: the scanner ends the frame at the paper's real
+// trailing edge, so a short sheet reports its true length.
+if CommandLine.arguments.contains("--ald") {
+    setIntOption("ald", 1)
+    // Give it room to detect a shorter page than the window allows.
+    setIntOption("page-height", Int(876.0 * 65536))
+    setIntOption("br-y", Int(876.0 * 65536))
+}
 
 let wantScan = CommandLine.arguments.contains("--scan")
 

@@ -231,14 +231,80 @@ identical at both resolutions (24-bit RGB), and the diagnostic exchange
 of §4.1 appears in both, so it is not resolution-gated as previously
 suspected.
 
-### 4.7 Still open
+## 5. SET WINDOW descriptor [capture] [SCSI-2]
 
-- Auto length detection: how a short page's true length is reported
-  (presumably the pixel-size read after start, or the sense residual).
-- Whether any mode or resolution yields JPEG-compressed data.
-- MODE SELECT page layouts (double-feed behavior, background color).
-- SET WINDOW descriptor field usage — the largest remaining gap, and
-  the one a new driver most needs. Derive by capturing scans at several
-  known geometries/resolutions/modes and diffing the 72-byte payload.
-- Sensor bit assignments in the vendor `0xC2` block.
+The 72-byte parameter list is the SCSI-2 form: an 8-byte header whose
+bytes 6–7 hold the descriptor length (`0x0040` = 64), followed by a
+64-byte window descriptor. Offsets below are **into the 72-byte
+payload** (descriptor offset + 8).
+
+| offset | size | field | observed |
+|---|---|---|---|
+| 6–7 | 2 | descriptor length | `0x0040` (64) |
+| 8 | 1 | window ID | `0x00` front, `0x80` back |
+| 9 | 1 | auto bit | `0x00` |
+| 10–11 | 2 | **X resolution, dpi** | `0x0258`=600, `0x012C`=300 |
+| 12–13 | 2 | **Y resolution, dpi** | same as X in all captures |
+| 14–17 | 4 | upper-left X | `0` |
+| 18–21 | 4 | upper-left Y | `0` |
+| 22–25 | 4 | **scan width** | `0x27D8`=10200, `0x27D0`=10192 |
+| 26–29 | 4 | **scan length** | `0x3390`=13200, `0xA1A8`=41384 |
+| 30 | 1 | brightness | `0x00` |
+| 31 | 1 | threshold | `0x00` |
+| 32 | 1 | contrast | `0x00` |
+| 33 | 1 | **image composition** | `0x05` (RGB colour) in *every* capture |
+| 34 | 1 | **bits per pixel** | `0x08` |
+| 35–47 | 13 | halftone, padding, bit order, compression | all `0x00` |
+| 48–63 | 16 | vendor block | `c1 00 01 …` with `c0` at offset 61 |
+| 64–67 | 4 | **paper width** | `0x27D8` = 10200 |
+| 68–71 | 4 | **paper length** | `0x3390`, `0xA1AF` |
+
+**Units.** Geometry is in **1/1200 inch**, independent of resolution:
+10200/1200 = 8.5 in, 13200/1200 = 11 in. Pixel count follows as
+`units × dpi / 1200` — the 300 dpi capture's 10200 gives 2550 px, and
+the 600 dpi capture's 10192 gives 5096 px, both exactly matching the
+pixel-size read. (The 600 dpi lineart session asked for 10192 rather
+than 10200 so that its 1-bit line came to a whole 637 bytes.)
+
+**Scan area vs paper size.** Offsets 22–29 are the area to digitise;
+offsets 64–71 are the sheet's dimensions. They correspond to the two
+distinct settings the app exposes (`br-x`/`br-y` and
+`page-width`/`page-height`).
+
+**Composition is always colour.** Image composition `0x05` and 8 bits
+per pixel appear even in the session that requested lineart — the
+protocol-level confirmation of §4.3.
+
+## 6. Auto length detection [capture]
+
+With ALD enabled (`05-ald.log`, 300 dpi colour):
+
+- The host sets the window **length to the maximum** (`0xA1A8` = 41,384
+  units = 34.49 in) rather than the paper's length.
+- The pixel-size read then reports that maximum as the line count
+  (`0x286A` = 10,346 lines) — it is an **upper bound, not the true page
+  length**.
+- The device simply **stops sending at the sheet's trailing edge**. The
+  host read 3,336 lines (25,520,400 bytes ÷ 7,650) and then received
+  end-of-page in the usual way (status byte 9 = `0x02`, then sense).
+
+So a page's real length is **discovered by reading until end-of-page**,
+never announced in advance. A driver must therefore treat the line count
+from the pixel-size read as a ceiling and size the final image from the
+data actually received — which is what a streaming reader does anyway.
+
+### 6.1 Still open
+
+- Whether any mode or resolution yields JPEG-compressed data (the
+  quantization table is downloaded in every session, yet no capture has
+  produced compressed output).
+- MODE SELECT page layouts — the double-feed and background-colour
+  settings the app exposes live here. Derive by diffing the 12/14-byte
+  parameter blocks across sessions with those options toggled.
+- Sensor bit assignments in the vendor `0xC2` block: capture while
+  pressing Scan, loading paper, and opening the cover, then diff.
+- The vendor block at descriptor offsets 48–63 (`c1 00 01 … c0`) is
+  constant in every capture; its meaning is unknown but it can simply be
+  replayed verbatim.
 - Jam and cover-open sense codes.
+- vendor `0xF1` subcommands (byte 1: `0x04` seen at teardown).
