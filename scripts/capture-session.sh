@@ -2,11 +2,14 @@
 # Records a USB trace of the vendored SANE stack driving the scanner, for
 # the clean-room protocol spec (docs/CLEANROOM-STUDY.md).
 #
-#   scripts/capture-session.sh <name> [--scan]
+#   scripts/capture-session.sh <name> [--scan] [--source S] [--mode M]
+#                                     [--resolution N]
 #
 # Writes docs/captures/<name>.log. Pass --scan to also read image data
-# (load paper first). The scanner must be free — quit SnapScan, since one
-# process at a time can hold it.
+# (load paper first); extra flags are forwarded to the smoke tool, e.g.
+#   --source "ADF Duplex"   --mode Color   --resolution 300
+# The scanner must be free — quit SnapScan, since one process at a time
+# can hold it.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

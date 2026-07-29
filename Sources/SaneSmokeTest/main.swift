@@ -77,18 +77,82 @@ if let pageLoadedIndex {
     }
 }
 
+// Optional scan settings, so captures can exercise duplex, color modes,
+// and resolutions rather than only the backend's defaults:
+//   --source "ADF Duplex"  --mode Color  --resolution 300
+func argument(_ name: String) -> String? {
+    let args = CommandLine.arguments
+    guard let index = args.firstIndex(of: name), index + 1 < args.count else { return nil }
+    return args[index + 1]
+}
+
+func optionIndex(named wanted: String) -> SANE_Int? {
+    for option in 1..<optionCount {
+        guard let descriptor = sane_get_option_descriptor(handle, option),
+            let namePointer = descriptor.pointee.name
+        else { continue }
+        if String(cString: namePointer) == wanted { return option }
+    }
+    return nil
+}
+
+func setStringOption(_ name: String, _ value: String) {
+    guard let index = optionIndex(named: name),
+        let descriptor = sane_get_option_descriptor(handle, index)
+    else {
+        print("option \(name) not found")
+        return
+    }
+    var buffer = [CChar](repeating: 0, count: Int(descriptor.pointee.size) + 1)
+    for (offset, byte) in value.utf8CString.prefix(buffer.count - 1).enumerated() {
+        buffer[offset] = byte
+    }
+    let status = sane_control_option(handle, index, SANE_ACTION_SET_VALUE, &buffer, nil)
+    print("set \(name)=\(value): \(status == SANE_STATUS_GOOD ? "ok" : "failed \(status.rawValue)")")
+}
+
+func setIntOption(_ name: String, _ value: Int) {
+    guard let index = optionIndex(named: name) else {
+        print("option \(name) not found")
+        return
+    }
+    var mutable = SANE_Int(value)
+    let status = sane_control_option(handle, index, SANE_ACTION_SET_VALUE, &mutable, nil)
+    print("set \(name)=\(value): \(status == SANE_STATUS_GOOD ? "ok" : "failed \(status.rawValue)")")
+}
+
+// Order matters: source/mode/resolution reload the option table and reset
+// geometry, so set them before anything positional.
+if let source = argument("--source") { setStringOption("source", source) }
+if let mode = argument("--mode") { setStringOption("mode", mode) }
+if let resolution = argument("--resolution").flatMap(Int.init) {
+    setIntOption("resolution", resolution)
+}
+
 let wantScan = CommandLine.arguments.contains("--scan")
-let startStatus = sane_start(handle)
-if startStatus == SANE_STATUS_NO_DOCS {
-    print("sane_start: feeder empty (expected without paper)")
-    sane_cancel(handle)
-} else if startStatus == SANE_STATUS_GOOD {
-    var parameters = SANE_Parameters()
-    _ = sane_get_parameters(handle, &parameters)
-    print(
-        "sane_start ok: \(parameters.pixels_per_line)x\(parameters.lines) "
-            + "depth \(parameters.depth) bytesPerLine \(parameters.bytes_per_line)")
-    if wantScan {
+
+// Each sane_start yields one image. In duplex that means two per sheet
+// (front then back), so loop until the feeder reports no more documents —
+// otherwise a "duplex" capture only ever records one side.
+var page = 0
+scanLoop: while true {
+    let startStatus = sane_start(handle)
+    switch startStatus {
+    case SANE_STATUS_NO_DOCS:
+        print(page == 0 ? "sane_start: feeder empty" : "sane_start: no more pages")
+        sane_cancel(handle)
+        break scanLoop
+    case SANE_STATUS_GOOD:
+        page += 1
+        var parameters = SANE_Parameters()
+        _ = sane_get_parameters(handle, &parameters)
+        print(
+            "page \(page): \(parameters.pixels_per_line)x\(parameters.lines) "
+                + "depth \(parameters.depth) bytesPerLine \(parameters.bytes_per_line)")
+        guard wantScan else {
+            sane_cancel(handle)
+            break scanLoop
+        }
         var total = 0
         var chunk = [UInt8](repeating: 0, count: 256 * 1024)
         while true {
@@ -99,15 +163,15 @@ if startStatus == SANE_STATUS_NO_DOCS {
             if status == SANE_STATUS_GOOD {
                 total += Int(length)
             } else {
-                print("read ended with \(status.rawValue), \(total) bytes")
+                print("  page \(page) read ended with \(status.rawValue), \(total) bytes")
                 break
             }
         }
+    default:
+        print("sane_start: status \(startStatus.rawValue)")
+        sane_cancel(handle)
+        break scanLoop
     }
-    sane_cancel(handle)
-} else {
-    print("sane_start: status \(startStatus.rawValue)")
-    sane_cancel(handle)
 }
 
 sane_close(handle)
