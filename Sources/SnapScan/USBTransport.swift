@@ -1,17 +1,22 @@
 import Foundation
 import IOKit
-import IOUSBHost
+import IOKit.usb
+import IOKit.usb.IOUSBLib
 
 /// Native USB transport for the scanner, implementing the framing recorded
 /// in docs/PROTOCOL.md: a 31-byte command packet tagged 0x43 carrying a SCSI
 /// CDB, an optional data phase, and a 13-byte status packet tagged 0x53.
 ///
-/// This is the replacement for libusb + sane-backends; it uses only
-/// IOUSBHost.framework, so nothing GPL-licensed is involved.
+/// Built on **IOUSBLib** rather than IOUSBHost: IOUSBHost's user client
+/// cannot be opened from inside the App Sandbox (`IOServiceOpen failed`,
+/// and the iokit-user-client-class exception does not lift it), while
+/// IOUSBLib works with only `com.apple.security.device.usb`. Sandbox
+/// compatibility is what keeps Mac App Store distribution possible.
 nonisolated final class USBTransport {
     enum TransportError: Error, LocalizedError {
         case deviceNotFound
         case interfaceNotFound
+        case openFailed(String)
         case pipeNotFound(UInt8)
         case shortStatus(Int)
         case badStatusTag(UInt8)
@@ -21,6 +26,7 @@ nonisolated final class USBTransport {
             switch self {
             case .deviceNotFound: "Scanner not found on USB"
             case .interfaceNotFound: "Scanner interface not available"
+            case .openFailed(let detail): detail
             case .pipeNotFound(let address):
                 String(format: "Scanner endpoint 0x%02x not found", address)
             case .shortStatus(let count): "Truncated status packet (\(count) bytes)"
@@ -31,7 +37,7 @@ nonisolated final class USBTransport {
         }
     }
 
-    /// The scanner's reply to a command: the status packet's meaning.
+    /// The scanner's reply to a command.
     enum CommandStatus: Equatable {
         /// Status byte 9 == 0x00 — the command completed.
         case good
@@ -59,43 +65,105 @@ nonisolated final class USBTransport {
     private static let bulkOutAddress: UInt8 = 0x02
     private static let bulkInAddress: UInt8 = 0x81
 
-    private let interface: IOUSBHostInterface
-    private let outPipe: IOUSBHostPipe
-    private let inPipe: IOUSBHostPipe
-    private let timeout: TimeInterval = 30
+    private typealias InterfaceRef =
+        UnsafeMutablePointer<UnsafeMutablePointer<IOUSBInterfaceInterface>?>
+
+    private let interface: InterfaceRef
+    private var outPipe: UInt8 = 0
+    private var inPipe: UInt8 = 0
+    private let timeoutMilliseconds: UInt32 = 30_000
 
     // MARK: - Discovery
 
-    /// Opens the first matching scanner. The interface is claimed for the
-    /// lifetime of this object, so only one instance may exist at a time.
     init(vendorID: Int, productID: Int) throws {
         guard let service = Self.findInterfaceService(vendorID: vendorID, productID: productID)
-        else {
-            throw TransportError.deviceNotFound
-        }
+        else { throw TransportError.deviceNotFound }
         defer { IOObjectRelease(service) }
 
-        // IOUSBHost's initializers and IO methods are NS_REFINED_FOR_SWIFT
-        // with no overlay shipped, so they appear under `__` names.
-        let interface = try IOUSBHostInterface(
-            __ioService: service, options: [], queue: nil, interestHandler: nil)
-        self.interface = interface
+        // IOUSBLib is a CFPlugIn: get the plug-in, then query it for the
+        // interface-interface.
+        var plugIn: UnsafeMutablePointer<UnsafeMutablePointer<IOCFPlugInInterface>?>?
+        var score: Int32 = 0
+        let plugInResult = IOCreatePlugInInterfaceForService(
+            service,
+            CFUUIDGetConstantUUIDWithBytes(
+                nil, 0x2D, 0x97, 0x86, 0xC6, 0x9E, 0xF3, 0x11, 0xD4,
+                0xAD, 0x51, 0x00, 0x0A, 0x27, 0x05, 0x28, 0x61),  // interface user client
+            CFUUIDGetConstantUUIDWithBytes(
+                nil, 0xC2, 0x44, 0xE8, 0x58, 0x10, 0x9C, 0x11, 0xD4,
+                0x91, 0xD4, 0x00, 0x50, 0xE4, 0xC6, 0x42, 0x6F),  // kIOCFPlugInInterfaceID
+            &plugIn, &score)
+        guard plugInResult == KERN_SUCCESS, let plugIn else {
+            throw TransportError.openFailed(
+                String(format: "USB plug-in unavailable (0x%08x)", plugInResult))
+        }
+        defer { _ = plugIn.pointee?.pointee.Release(plugIn) }
 
-        guard let outPipe = try? interface.copyPipe(withAddress: Int(Self.bulkOutAddress))
-        else { throw TransportError.pipeNotFound(Self.bulkOutAddress) }
-        guard let inPipe = try? interface.copyPipe(withAddress: Int(Self.bulkInAddress))
-        else { throw TransportError.pipeNotFound(Self.bulkInAddress) }
-        self.outPipe = outPipe
-        self.inPipe = inPipe
+        var rawInterface: LPVOID?
+        let queryResult = withUnsafeMutablePointer(to: &rawInterface) { pointer in
+            plugIn.pointee?.pointee.QueryInterface(
+                plugIn,
+                CFUUIDGetUUIDBytes(
+                    CFUUIDGetConstantUUIDWithBytes(
+                        nil, 0x87, 0x52, 0x66, 0x3B, 0xC0, 0x7B, 0x4B, 0xAE,
+                        0x95, 0x84, 0x22, 0x03, 0x2F, 0xAB, 0x9C, 0x5A)),  // ID942
+                pointer) ?? KERN_FAILURE
+        }
+        guard queryResult == S_OK, let rawInterface else {
+            throw TransportError.interfaceNotFound
+        }
+        interface = InterfaceRef(OpaquePointer(rawInterface))
+
+        // Claim the interface. This is the call the sandbox blocks under
+        // IOUSBHost but permits here.
+        let openResult = interface.pointee?.pointee.USBInterfaceOpen(interface) ?? KERN_FAILURE
+        guard openResult == kIOReturnSuccess else {
+            _ = interface.pointee?.pointee.Release(interface)
+            throw TransportError.openFailed(
+                openResult == kIOReturnExclusiveAccess
+                    ? "The scanner is in use by another app"
+                    : String(format: "Couldn't claim the scanner (0x%08x)", openResult))
+        }
+
+        try findPipes()
     }
 
     deinit {
-        interface.destroy()
+        _ = interface.pointee?.pointee.USBInterfaceClose(interface)
+        _ = interface.pointee?.pointee.Release(interface)
     }
 
-    /// Finds the scanner's USB *interface* service — the object that owns the
-    /// bulk pipes. Only device services are matchable by vendor/product, so
-    /// this matches the device and then walks to its interface child.
+    /// Maps endpoint addresses to IOUSBLib's 1-based pipe references.
+    private func findPipes() throws {
+        var endpointCount: UInt8 = 0
+        guard
+            interface.pointee?.pointee.GetNumEndpoints(interface, &endpointCount)
+                == kIOReturnSuccess
+        else { throw TransportError.interfaceNotFound }
+
+        for pipe in 1...max(endpointCount, 1) {
+            var direction: UInt8 = 0
+            var number: UInt8 = 0
+            var transferType: UInt8 = 0
+            var maxPacketSize: UInt16 = 0
+            var interval: UInt8 = 0
+            guard
+                interface.pointee?.pointee.GetPipeProperties(
+                    interface, pipe, &direction, &number, &transferType,
+                    &maxPacketSize, &interval) == kIOReturnSuccess
+            else { continue }
+            // direction: 0 = out, 1 = in (kUSBOut / kUSBIn)
+            let address = UInt8(number) | (direction == 1 ? 0x80 : 0x00)
+            if address == Self.bulkOutAddress { outPipe = pipe }
+            if address == Self.bulkInAddress { inPipe = pipe }
+        }
+        guard outPipe != 0 else { throw TransportError.pipeNotFound(Self.bulkOutAddress) }
+        guard inPipe != 0 else { throw TransportError.pipeNotFound(Self.bulkInAddress) }
+    }
+
+    /// Finds the scanner's USB interface service. Only device services are
+    /// matchable by vendor/product, so match the device and walk to its
+    /// interface child.
     private static func findInterfaceService(vendorID: Int, productID: Int) -> io_service_t? {
         guard let matching = IOServiceMatching("IOUSBHostDevice") as NSMutableDictionary?
         else { return nil }
@@ -180,27 +248,28 @@ nonisolated final class USBTransport {
     // MARK: - Raw pipe access
 
     func write(_ data: Data) throws {
-        let buffer = NSMutableData(data: data)
-        var transferred = 0
-        do {
-            try outPipe.__sendIORequest(
-                with: buffer, bytesTransferred: &transferred, completionTimeout: timeout)
-        } catch {
-            throw TransportError.io("USB write failed: \(error.localizedDescription)")
+        var bytes = [UInt8](data)
+        let result = bytes.withUnsafeMutableBytes { buffer -> IOReturn in
+            interface.pointee?.pointee.WritePipeTO(
+                interface, outPipe, buffer.baseAddress, UInt32(buffer.count),
+                timeoutMilliseconds, timeoutMilliseconds) ?? KERN_FAILURE
+        }
+        guard result == kIOReturnSuccess else {
+            throw TransportError.io(String(format: "USB write failed (0x%08x)", result))
         }
     }
 
     func read(maxLength: Int) throws -> Data {
-        guard let buffer = NSMutableData(length: maxLength) else {
-            throw TransportError.io("could not allocate \(maxLength) bytes")
+        var buffer = [UInt8](repeating: 0, count: maxLength)
+        var size = UInt32(maxLength)
+        let result = buffer.withUnsafeMutableBytes { raw -> IOReturn in
+            interface.pointee?.pointee.ReadPipeTO(
+                interface, inPipe, raw.baseAddress, &size,
+                timeoutMilliseconds, timeoutMilliseconds) ?? KERN_FAILURE
         }
-        var transferred = 0
-        do {
-            try inPipe.__sendIORequest(
-                with: buffer, bytesTransferred: &transferred, completionTimeout: timeout)
-        } catch {
-            throw TransportError.io("USB read failed: \(error.localizedDescription)")
+        guard result == kIOReturnSuccess else {
+            throw TransportError.io(String(format: "USB read failed (0x%08x)", result))
         }
-        return Data(bytes: buffer.bytes, count: min(transferred, maxLength))
+        return Data(buffer.prefix(Int(size)))
     }
 }

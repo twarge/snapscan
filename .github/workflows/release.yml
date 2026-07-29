@@ -73,12 +73,10 @@ jobs:
             grep -q "Apple Development:" ||
             { echo "::error::The p12 does not contain an Apple Development identity"; exit 1; }
           CERTIFICATE_SUBJECT="$(
-            openssl pkcs12 \
-              -in "$CERTIFICATE_PATH" \
-              -clcerts \
-              -nokeys \
-              -passin env:P12_PASSWORD 2>/dev/null |
-              sed -n "/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p" |
+            security find-certificate \
+              -a \
+              -c "Apple Development" \
+              -p "$KEYCHAIN_PATH" |
               openssl x509 -in /dev/stdin -noout -subject
           )"
           printf "%s\n" "$CERTIFICATE_SUBJECT" |
