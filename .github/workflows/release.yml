@@ -70,8 +70,20 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH" |
-            grep -q "Apple Development:.*($EXPECTED_TEAM_ID)" ||
-            { echo "::error::The p12 does not contain an Apple Development identity for team $EXPECTED_TEAM_ID"; exit 1; }
+            grep -q "Apple Development:" ||
+            { echo "::error::The p12 does not contain an Apple Development identity"; exit 1; }
+          CERTIFICATE_SUBJECT="$(
+            openssl pkcs12 \
+              -in "$CERTIFICATE_PATH" \
+              -clcerts \
+              -nokeys \
+              -passin env:P12_PASSWORD 2>/dev/null |
+              sed -n "/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p" |
+              openssl x509 -in /dev/stdin -noout -subject
+          )"
+          printf "%s\n" "$CERTIFICATE_SUBJECT" |
+            grep -Eq "OU[[:space:]]*=[[:space:]]*$EXPECTED_TEAM_ID([/,]|$)" ||
+            { echo "::error::The Apple Development certificate belongs to a different team; expected $EXPECTED_TEAM_ID"; exit 1; }
 
       - name: Build vendored SANE + xcframework
         run: |

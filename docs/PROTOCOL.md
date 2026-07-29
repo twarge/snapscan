@@ -91,10 +91,20 @@ against GET WINDOW output will settle it.
 ### 3.3 Hardware status, vendor 0xC2 [capture]
 
 CDB `c2 00 00 00 00 00 00 00 0c 00` — allocation 0x0C (12 bytes).
-Returns a 12-byte block of sensor bits: the Scan/Function buttons, paper
-loaded, cover open, and related switches. Bit assignments are **[open]**
-— derive by toggling each physical condition and diffing the block
-(press Scan, load paper, open the flap).
+Returns a 12-byte block of sensor bits. Assignments confirmed by
+isolating each physical action and watching which bit moves:
+
+| byte | bit | meaning |
+|---|---|---|
+| 3 | 7 (`0x80`) | feeder flap closed (sustained while closed) |
+| 3 | 5 (`0x20`) | front cover open, i.e. opened to clear a jam |
+| 4 | 0 (`0x01`) | **Scan button pressed** (momentary) |
+| 5 | 0 (`0x01`) | set in every reading observed; meaning unknown |
+
+Idle with the flap open reads `00 00 00 00 00 01 00 00 00 00 00 00`.
+Note the scanner still answers while the flap is closed (byte 3 bit 7
+set) even though closing it normally removes the device from the bus.
+Remaining bytes have not been seen non-zero.
 
 ### 3.4 MODE SELECT / MODE SENSE [capture] [SCSI-2]
 

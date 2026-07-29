@@ -97,14 +97,15 @@ if CommandLine.arguments.contains("--watch-sensors") {
             _ = try await NativeScanner.shared.open()
             var previous = Data()
             while true {
-                let block = try await NativeScanner.shared.readSensors()
+                let state = await NativeScanner.shared.sensorState()
+                let block = state?.raw ?? Data()
                 if block != previous {
                     let hex = block.map { String(format: "%02x", $0) }.joined(separator: " ")
-                    let bits = block.enumerated()
-                        .filter { $0.element != 0 }
-                        .map { "byte\($0.offset)=0x\(String($0.element, radix: 16))" }
-                        .joined(separator: " ")
-                    print("\(hex)   \(bits.isEmpty ? "(all zero)" : bits)")
+                    var decoded: [String] = []
+                    if state?.scanButton == true { decoded.append("SCAN BUTTON") }
+                    if state?.feederClosed == true { decoded.append("feeder closed") }
+                    if state?.coverOpen == true { decoded.append("cover open") }
+                    print("\(hex)   \(decoded.isEmpty ? "idle" : decoded.joined(separator: ", "))")
                     previous = block
                 }
                 try await Task.sleep(for: .milliseconds(250))
