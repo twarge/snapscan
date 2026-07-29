@@ -152,7 +152,7 @@ actor SaneSession {
 
     // MARK: - Options
 
-    private static let logger = Logger(subsystem: "com.twinleaf.snapscan", category: "sane")
+    private static let logger = Logger(subsystem: "com.twarge.snapscan", category: "sane")
 
     private func setOption(_ name: String, int value: SANE_Int) {
         guard let handle, let index = optionIndex[name] else {
