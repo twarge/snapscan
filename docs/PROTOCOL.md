@@ -11,8 +11,10 @@ Apache-licensed driver (see CLEANROOM-STUDY.md for method and rationale).
   scanner device class defines most commands and data formats here.
 - **[open]** — not yet established; needs a capture or experiment.
 
-Status: **in progress.** Framing and enumeration are established;
-the scan sequence needs a capture with paper loaded.
+Status: **in progress.** Framing, enumeration, and the single-page scan
+sequence (including the image data format and end-of-page signaling) are
+established from captures. Duplex, resolution variants, and auto length
+detection remain.
 
 ## 1. Device identity [capture]
 
@@ -55,11 +57,13 @@ Opcodes are SCSI-2 standard unless marked vendor. [SCSI-2] [capture]
 | 0x1D | SEND DIAGNOSTIC | pre-scan |
 | 0x24 | SET WINDOW | scan setup |
 | 0x2A | SEND | scan setup (table download) |
+| 0x1B | SCAN | scan start |
+| 0x28 | READ | image + metadata transfer |
+| 0x31 | OBJECT POSITION | paper feed |
 | 0xC2 | vendor: hardware status | sensors |
-| 0xF1 | vendor: scanner control | setup |
+| 0xF1 | vendor: scanner control | setup, teardown |
 
-Expected but not yet in a capture (need a scan session): SCAN (0x1B),
-READ (0x28), OBJECT POSITION (0x31), GET WINDOW (0x25). [open]
+GET WINDOW (0x25) has not appeared in any capture. [open]
 
 ### 3.1 INQUIRY, standard page [capture] [SCSI-2]
 
@@ -128,14 +132,58 @@ Observed order (93 transfers total):
 8. SEND DIAGNOSTIC / READ DIAGNOSTIC pair
 9. SEND (table download)
 
-### 4.2 Scan [open]
+### 4.2 Single-page scan [capture]
 
-Needs a capture with paper loaded. Open questions to settle there:
+From `02-scan.log` (1279 transfers, one letter page at the backend's
+default settings):
 
-- Does color data arrive JPEG-compressed or as raw RGB rows? (A
-  quantization-table download is required at setup, which suggests JPEG,
-  yet our current sessions surface raw rows to the app.)
-- READ chunking: transfer sizes, and how end-of-page is signaled.
+1. **OBJECT POSITION** — CDB `31 01 …`. Byte 1 = `0x01` = load/feed a
+   sheet from the hopper.
+2. **SCAN** — CDB `1b 00 00 00 01 …`. Byte 4 is the transfer length for
+   a 1-byte data-out phase carrying the window ID to scan.
+3. **READ, data type 0x80 (pixel size)** — CDB
+   `28 00 80 00 00 00 00 00 20`, allocation 32 bytes. Response
+   (observed): `00 00 13 e8 00 00 19 c8 …` — big-endian pairs:
+   `0x13E8` = 5096 pixels wide, `0x19C8` = 6600 lines. The pair repeats
+   (front/back window slots), with a zero block between.
+4. **READ, data type 0x00 (image)** — repeated. CDB
+   `28 00 00 00 00 00 03 f7 38`, i.e. transfer length `0x03F738` =
+   259,896 bytes, which is exactly **17 image lines**. Each read returns
+   a full 259,896 bytes and a success status.
+5. **End of page**: the status packet of the final read differs — byte 9
+   is `0x02` instead of `0x00`. The host then issues **REQUEST SENSE**.
+6. **Sense data** (18 bytes): `f0 00 60 00 03 08 58 0a 00 …` — SCSI-2
+   fixed-format sense with the VALID bit set, sense key `0x0` (NO
+   SENSE) carrying EOM+ILI, and an information field of `0x030858` =
+   198,744 bytes = **13 lines of residual** (the unfilled tail of the
+   final read).
+7. Teardown: vendor `0xF1` with byte 1 = `0x04`, then a MODE SELECT.
+
+Verified arithmetic: 388 full reads × 17 lines + 4 valid lines in the
+final read = **6600 lines**, exactly the page height reported in step 3.
+
+### 4.3 Image data format [capture]
+
+**The wire always carries 24-bit RGB**, three bytes per pixel, one row
+per line, top to bottom — even when the application requested lineart.
+Proof: at 5096 px wide, a line is 15,288 bytes; the observed 259,896-byte
+read is exactly 17 such lines, and the line count reconciles to 6600.
+The session that produced this capture asked the backend for **lineart**,
+yet the transfer is full color: grayscale and lineart are synthesized on
+the host, not by the scanner.
+
+**No JPEG.** No SOI marker (`FF D8`) appears anywhere in the captured
+data. A quantization-table download still occurs during setup (the SEND
+in §4.1), so JPEG may be reachable in some configuration, but it is not
+used here. Whether any mode or resolution switches the device to
+compressed output is **[open]** — compare a 600 dpi color capture.
+
+### 4.4 Still open
+
 - Duplex: how front/back streams are selected and interleaved.
-- Auto length detection: how the actual page length is reported.
-- Empty feeder and jam: which status/sense codes appear.
+- Auto length detection: how a short page's actual length is reported
+  (presumably the pixel-size read or the sense residual).
+- Resolution variants: whether >300 dpi requires the diagnostic
+  pre-read seen in §4.1, and whether it changes the data format.
+- Empty feeder and jam: which sense keys appear (the empty-feeder path
+  is captured in `01-open.log`; sense decoding is not yet written up).
