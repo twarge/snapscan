@@ -3,7 +3,10 @@
 // empty-feeder sane_start (expects NO_DOCS unless paper is loaded).
 // Usage: swift run SaneSmokeTest [--scan]   (--scan reads pages if paper is in)
 import CSane
+import CoreGraphics
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 let repoVendor = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()  // main.swift
@@ -162,6 +165,7 @@ scanLoop: while true {
             break scanLoop
         }
         var total = 0
+        var image = Data()
         var chunk = [UInt8](repeating: 0, count: 256 * 1024)
         while true {
             var length: SANE_Int = 0
@@ -170,9 +174,42 @@ scanLoop: while true {
             }
             if status == SANE_STATUS_GOOD {
                 total += Int(length)
+                image.append(contentsOf: chunk[0..<Int(length)])
             } else {
                 print("  page \(page) read ended with \(status.rawValue), \(total) bytes")
                 break
+            }
+        }
+
+        // Optional PNG output, so SANE's result can be compared against the
+        // native driver's (--out DIR).
+        if let directory = argument("--out") {
+            let bytesPerLine = Int(parameters.bytes_per_line)
+            let rows = bytesPerLine > 0 ? image.count / bytesPerLine : 0
+            let isColor = parameters.format == SANE_FRAME_RGB
+            if rows > 0,
+                let provider = CGDataProvider(
+                    data: image.prefix(rows * bytesPerLine) as CFData),
+                let cgImage = CGImage(
+                    width: Int(parameters.pixels_per_line), height: rows,
+                    bitsPerComponent: Int(parameters.depth),
+                    bitsPerPixel: Int(parameters.depth) * (isColor ? 3 : 1),
+                    bytesPerRow: bytesPerLine,
+                    space: isColor
+                        ? CGColorSpaceCreateDeviceRGB() : CGColorSpaceCreateDeviceGray(),
+                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                    provider: provider, decode: nil, shouldInterpolate: false,
+                    intent: .defaultIntent)
+            {
+                let url = URL(fileURLWithPath: directory)
+                    .appendingPathComponent("sane-page-\(page).png")
+                if let destination = CGImageDestinationCreateWithURL(
+                    url as CFURL, UTType.png.identifier as CFString, 1, nil) {
+                    CGImageDestinationAddImage(destination, cgImage, nil)
+                    if CGImageDestinationFinalize(destination) {
+                        print("  wrote \(url.path)")
+                    }
+                }
             }
         }
     default:
