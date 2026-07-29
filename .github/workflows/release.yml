@@ -71,16 +71,12 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
-          # Sign the archive with the Developer ID identity directly — the default signs
-          # archives with Apple Development, minting a fresh certificate on every
-          # ephemeral runner until the account hits Apple's certificate cap.
           xcodebuild archive \
             -project SnapScan.xcodeproj \
             -scheme SnapScan \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath build/SnapScan.xcarchive \
-            CODE_SIGN_IDENTITY='Developer ID Application' \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_"$ASC_KEY_ID".p8 \
             -authenticationKeyID "$ASC_KEY_ID" \
