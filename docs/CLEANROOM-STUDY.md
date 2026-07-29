@@ -89,6 +89,31 @@ and can be licensed Apache-2.0.
   lines, but it covers ~150 scanner models, three transports, and
   decades of quirks; we need one model, one transport.)
 
+## Phase 1 status: capture rig ready
+
+`scripts/add-usb-trace.py` injects a bulk-transfer logging hook into the
+vendored libusb during `scripts/build-sane.sh` (idempotent; dormant
+unless `SNAPSCAN_USB_TRACE` names an output file, so normal builds are
+unaffected). `scripts/capture-session.sh <name> [--scan]` records a
+session into `docs/captures/`, and `scripts/decode-capture.py` renders a
+raw log as an annotated transcript — Fujitsu USB framing, the SCSI
+command inside it, and status packets.
+
+**To record the first sessions** (the scanner must be awake — flap open —
+and SnapScan must be quit, since one process at a time can hold it):
+
+```
+make smoke                                   # build the capture tool
+scripts/capture-session.sh 01-open           # detection + sensors, no paper
+scripts/capture-session.sh 02-scan --scan    # with paper loaded
+scripts/decode-capture.py docs/captures/01-open.log | less
+```
+
+Sessions worth capturing for a complete spec: detection/open; button and
+paper sensors; simplex and duplex scans; each color mode; 150/300/600
+dpi (the >300 path differs); auto paper size (ALD + black background);
+and an error case (feeder empty).
+
 ## Phases and effort
 
 | Phase | Work | Estimate |

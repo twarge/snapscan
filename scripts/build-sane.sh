@@ -39,6 +39,9 @@ cd "$SRC"
 
 echo "== libusb =="
 cd "$SRC/libusb-${LIBUSB_VER}"
+# Protocol-capture hook: dormant unless SNAPSCAN_USB_TRACE is set at
+# runtime (see docs/CLEANROOM-STUDY.md).
+python3 "$REPO/scripts/add-usb-trace.py" "$SRC/libusb-${LIBUSB_VER}"
 make distclean >/dev/null 2>&1 || true
 ./configure --prefix="$PREFIX" --disable-dependency-tracking >/dev/null
 make -j"$JOBS" >/dev/null
