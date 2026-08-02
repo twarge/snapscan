@@ -166,51 +166,59 @@ actor NativeScanner {
         // The device needs its full setup sequence before it will scan.
         try prepare(transport: transport, settings: settings, windows: windows)
 
-        while true {
-            if cancelFlag.isCancelled {
-                return BatchResult(pagesScanned: pagesScanned, feederWasEmpty: false)
-            }
-
-            // Feed a sheet. An empty hopper reports itself here.
-            let (feedStatus, _) = try transport.send(cdb: ScannerCommands.objectPositionLoad())
-            if feedStatus == .checkCondition {
-                let verdict = try Self.sense(transport)
-                if case .other(let key, let asc, let ascq) = verdict {
-                    // Feeder empty is the expected end of a batch.
-                    if key == 0x03 || key == 0x02 {
-                        return BatchResult(
-                            pagesScanned: pagesScanned, feederWasEmpty: pagesScanned == 0)
-                    }
-                    throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
+        // Feed the first sheet and start the scan **once** for the whole
+        // batch. The scanner then pulls the rest of the hopper through by
+        // itself, one sheet after another, and the host simply keeps
+        // reading. Feeding and re-starting per sheet (the obvious
+        // structure) stops the paper path between pages and costs a
+        // visible pause on every sheet.
+        let (feedStatus, _) = try transport.send(cdb: ScannerCommands.objectPositionLoad())
+        if feedStatus == .checkCondition {
+            let verdict = try Self.sense(transport)
+            if case .other(let key, let asc, let ascq) = verdict {
+                // Nothing in the hopper: an empty batch, not a failure.
+                if key == 0x03 || key == 0x02 {
+                    return BatchResult(pagesScanned: 0, feederWasEmpty: true)
                 }
+                throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
             }
+        }
 
-            // Start the scan, listing the windows to digitise.
-            let windowIDs = Data(windows.map(\.rawValue))
-            let (scanStatus, _) = try transport.send(
-                cdb: ScannerCommands.scan(windowCount: windows.count),
-                dataOut: windowIDs)
-            if scanStatus == .checkCondition {
-                let verdict = try Self.sense(transport)
-                if case .other(let key, let asc, let ascq) = verdict {
-                    throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
-                }
+        let windowIDs = Data(windows.map(\.rawValue))
+        let (scanStatus, _) = try transport.send(
+            cdb: ScannerCommands.scan(windowCount: windows.count),
+            dataOut: windowIDs)
+        if scanStatus == .checkCondition {
+            let verdict = try Self.sense(transport)
+            if case .other(let key, let asc, let ascq) = verdict {
+                throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
             }
+        }
 
-            // Each window yields one page image.
+        pageLoop: while true {
+            if cancelFlag.isCancelled { break }
+
+            // One image per window, sheet after sheet, until the scanner
+            // runs out of paper.
             for window in windows {
-                if cancelFlag.isCancelled { break }
+                if cancelFlag.isCancelled { break pageLoop }
                 onEvent(.pageStarted(index: pageIndex))
-                let image = try readPage(
+                switch try readPage(
                     transport: transport, window: window, settings: settings,
                     pageIndex: pageIndex, onEvent: onEvent)
-                if let image {
+                {
+                case .page(let image):
                     onEvent(.pageComplete(index: pageIndex, image: image))
                     pagesScanned += 1
                     pageIndex += 1
+                case .noMorePages:
+                    break pageLoop
                 }
             }
         }
+
+        return BatchResult(
+            pagesScanned: pagesScanned, feederWasEmpty: pagesScanned == 0)
     }
 
     /// Replays the initialization the device requires before it will scan
@@ -280,6 +288,12 @@ actor NativeScanner {
         _ = try? readSensors()
     }
 
+    private enum PageOutcome {
+        case page(CGImage)
+        /// The scanner has no more paper — the batch is complete.
+        case noMorePages
+    }
+
     /// Streams one window's image, emitting partial previews as rows arrive.
     private func readPage(
         transport: USBTransport,
@@ -287,15 +301,29 @@ actor NativeScanner {
         settings: ScanSettings,
         pageIndex: Int,
         onEvent: @escaping @Sendable (BatchEvent) -> Void
-    ) throws -> CGImage? {
+    ) throws -> PageOutcome {
         // Pixel size: width is exact; the line count is an upper bound when
-        // auto length detection is on (docs/PROTOCOL.md §6).
+        // auto length detection is on (docs/PROTOCOL.md §6). This is also
+        // where the end of the batch shows up — once the hopper is empty
+        // there is no next page to describe.
         let (sizeStatus, sizeData) = try transport.send(
             cdb: ScannerCommands.read(type: .pixelSize, window: window, length: 32),
             dataIn: 32)
-        if sizeStatus == .checkCondition { _ = try Self.sense(transport) }
+        if sizeStatus == .checkCondition {
+            switch try Self.sense(transport) {
+            case .notReadyRetry:
+                break  // the window is still filling; the size follows
+            case .endOfPage:
+                return .noMorePages
+            case .other(let key, let asc, let ascq):
+                // Paper-related conditions end the batch; anything else is
+                // a real fault worth surfacing.
+                if key == 0x02 || key == 0x03 { return .noMorePages }
+                throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
+            }
+        }
         guard let size = ScannerCommands.parsePixelSize(sizeData), size.width > 0 else {
-            throw ScanError.unexpectedStatus("scanner did not report a page size")
+            return .noMorePages
         }
 
         let bytesPerLine = size.width * 3  // always 24-bit RGB
@@ -353,11 +381,16 @@ actor NativeScanner {
         }
 
         let rows = buffer.count / bytesPerLine
-        guard rows > 0 else { return nil }
+        guard rows > 0 else { return .noMorePages }
         // The device returns inverted reflectance (docs/PROTOCOL.md §4.3).
-        return FrameImage.make(
-            pixels: buffer, width: size.width, height: rows,
-            bytesPerRow: bytesPerLine, format: .rgb24, inverted: true)
+        guard
+            let image = FrameImage.make(
+                pixels: buffer, width: size.width, height: rows,
+                bytesPerRow: bytesPerLine, format: .rgb24, inverted: true)
+        else {
+            throw ScanError.unexpectedStatus("could not assemble the scanned page")
+        }
+        return .page(image)
     }
 
     /// Issues REQUEST SENSE and interprets the reply.
