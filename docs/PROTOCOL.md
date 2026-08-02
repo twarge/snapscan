@@ -193,23 +193,6 @@ in §4.1), so JPEG may be reachable in some configuration, but it is not
 used here. Whether any mode or resolution switches the device to
 compressed output is **[open]** — compare a 600 dpi color capture.
 
-### 4.3a One SCAN covers the whole hopper [capture]
-
-A batch is started **once**: OBJECT POSITION to feed the first sheet,
-then SCAN. The scanner then pulls the remaining sheets through by
-itself — a 13,965-transfer duplex capture of roughly seven pages
-contains exactly one OBJECT POSITION and one SCAN at the start, with
-2,699 READs after them. The trailing OBJECT POSITION in that capture is
-the *next* batch being attempted, which is how the empty hopper is
-discovered.
-
-Feeding and re-starting per sheet also works, but stops the paper path
-between pages and costs a visible pause on every sheet.
-
-The end of a batch surfaces on the pixel-size read for the page that
-never arrives: a paper-related sense there means the hopper is empty,
-not that anything failed.
-
 ### 4.4 Window IDs and duplex [capture]
 
 Windows are identified by a single byte: **`0x00` = front, `0x80` =
