@@ -150,6 +150,9 @@ struct ContentView: View {
                         engine.documentWasMoved(url)
                         if selection == url { selection = nil }
                         library.refresh()
+                    } onTrash: {
+                        if selection == document.url { selection = nil }
+                        library.refresh()
                     } content: {
                         documentRow(document, isSelected: selection == document.url)
                     }
@@ -253,11 +256,25 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .contextMenu {
             if let url = engine.documentURL {
+                Button("Copy PDF") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.writeObjects([url as NSURL])
+                }
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([url])
                 }
+                Divider()
             }
+            Button("Discard Scan", role: .destructive) { discardScan() }
         }
+    }
+
+    /// Throws away the scan in progress — the PDF goes to the Trash.
+    private func discardScan() {
+        engine.discardCurrent()
+        selection = nil
+        selectedPages = []
+        draftName = ""
     }
 
     /// A finalized document whose straightening/saving is still draining.
@@ -382,6 +399,9 @@ struct ContentView: View {
                 .onSubmit { finalizeDocument() }
             Text(".pdf")
                 .foregroundStyle(.secondary)
+            Button("Discard", role: .destructive) { discardScan() }
+                .disabled(engine.isBusy)
+                .help("Throw this scan away — the PDF moves to the Trash")
             Button("Done") { finalizeDocument() }
                 .buttonStyle(.borderedProminent)
                 .disabled(engine.isBusy || engine.pages.isEmpty)

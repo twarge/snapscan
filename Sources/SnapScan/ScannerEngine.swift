@@ -314,6 +314,19 @@ final class ScannerEngine {
         NativeScanner.shared.cancelFlag.cancel()
     }
 
+    /// Abandons the scan in progress: its pages are dropped and the PDF
+    /// written so far goes to the Trash, where it can still be recovered.
+    func discardCurrent() {
+        guard let document = current else { return }
+        if let url = document.url {
+            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        }
+        current = nil
+        feederWasEmpty = false
+        lastError = nil
+        ScanLibrary.shared.refresh()
+    }
+
     /// Finalizes the current document: the next scan starts a new PDF.
     func done() {
         retireCurrentDocument()

@@ -12,6 +12,8 @@ struct DragRow<Content: View>: NSViewRepresentable {
     var interceptsClicks: Bool = true
     let onSelect: () -> Void
     let onMoved: (URL) -> Void
+    /// Called after the file is trashed from the context menu.
+    var onTrash: () -> Void = {}
     @ViewBuilder let content: () -> Content
 
     func makeNSView(context: Context) -> DragRowView {
@@ -19,7 +21,7 @@ struct DragRow<Content: View>: NSViewRepresentable {
         view.hosted = NSHostingView(rootView: AnyView(content()))
         view.configure(
             url: url, interceptsClicks: interceptsClicks,
-            onSelect: onSelect, onMoved: onMoved)
+            onSelect: onSelect, onMoved: onMoved, onTrash: onTrash)
         return view
     }
 
@@ -27,7 +29,7 @@ struct DragRow<Content: View>: NSViewRepresentable {
         view.hosted?.rootView = AnyView(content())
         view.configure(
             url: url, interceptsClicks: interceptsClicks,
-            onSelect: onSelect, onMoved: onMoved)
+            onSelect: onSelect, onMoved: onMoved, onTrash: onTrash)
     }
 }
 
@@ -37,16 +39,19 @@ final class DragRowView: NSView, NSDraggingSource {
     private var interceptsClicks = true
     private var onSelect: () -> Void = {}
     private var onMoved: (URL) -> Void = { _ in }
+    fileprivate var onTrash: () -> Void = {}
     private var mouseDownLocation: NSPoint?
 
     func configure(
         url: URL, interceptsClicks: Bool,
-        onSelect: @escaping () -> Void, onMoved: @escaping (URL) -> Void
+        onSelect: @escaping () -> Void, onMoved: @escaping (URL) -> Void,
+        onTrash: @escaping () -> Void = {}
     ) {
         self.url = url
         self.interceptsClicks = interceptsClicks
         self.onSelect = onSelect
         self.onMoved = onMoved
+        self.onTrash = onTrash
         if let hosted, hosted.superview == nil {
             hosted.translatesAutoresizingMaskIntoConstraints = false
             addSubview(hosted)
@@ -72,15 +77,33 @@ final class DragRowView: NSView, NSDraggingSource {
 
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
-        let reveal = NSMenuItem(
-            title: "Reveal in Finder", action: #selector(revealInFinder), keyEquivalent: "")
-        reveal.target = self
-        menu.addItem(reveal)
+        for (title, selector) in [
+            ("Copy PDF", #selector(copyPDF)),
+            ("Reveal in Finder", #selector(revealInFinder)),
+            ("Move to Trash", #selector(moveToTrash)),
+        ] {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+            item.target = self
+            if title == "Move to Trash" { menu.addItem(.separator()) }
+            menu.addItem(item)
+        }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    /// Puts the file itself on the pasteboard, so pasting into the Finder,
+    /// Mail, or anywhere else that takes files yields the PDF.
+    @objc private func copyPDF() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([url as NSURL])
     }
 
     @objc private func revealInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    @objc private func moveToTrash() {
+        try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        onTrash()
     }
 
     override func mouseUp(with event: NSEvent) {
