@@ -59,6 +59,14 @@ struct SettingsView: View {
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                Toggle("Suggest a name from the document", isOn: $engine.settings.suggestNames)
+                Text(
+                    "Reads the first two pages and proposes a filename. "
+                        + "Runs entirely on this Mac — nothing is sent anywhere. "
+                        + "A name you type yourself is never replaced."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             Section("Scanner") {
                 Toggle(

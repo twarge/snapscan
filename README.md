@@ -46,6 +46,13 @@ A name field sits above the pages: when a new scan starts it is focused
 with the proposed name selected, so just typing and pressing return renames
 the PDF.
 
+**Suggested names** (Saving ▸ Suggest a name from the document): the first
+two pages are read with Vision and summarized into a filename by Apple's
+on-device language model — "Riverside Water Authority Quarterly Statement
+2025-04-08" rather than "Scan 2025-04-09 at 11.02.55". It runs entirely on
+this Mac; nothing is uploaded. Macs without Apple Intelligence fall back to
+picking the page's heading, and a name you type yourself is never replaced.
+
 **Auto paper size** (Paper ▸ Auto): scans full-width with hardware length
 detection, crops to the detected paper,
 and snaps to a standard size (Letter, A4, Legal, A5, photo sizes, …) when
@@ -55,7 +62,8 @@ page; the page cell shows what was decided.
 
 All settings live in SnapScan ▸ Settings (⌘,): sides, color mode, 150–600
 dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
-folder, the hardware button toggle, menu-bar-only mode, and start-at-login.
+folder, suggested names, the hardware button toggle, menu-bar-only mode, and
+start-at-login.
 
 **Menu bar mode** hides the Dock icon and puts a scanner icon in the menu
 bar (click it for status, a Scan button, and Quit). Scans started with the
@@ -105,6 +113,9 @@ and uses the async Swift Vision API.
   such documents appear as spinner rows in the sidebar until their final
   PDF is written.
 - `Sources/SnapScan/OrientationDetector.swift` — auto-rotate and deskew.
+- `Sources/SnapScan/NameSuggester.swift` — reads the first pages with
+  Vision and asks the on-device model for a filename; falls back to the
+  page's heading where there's no model.
   Vision's fast OCR scores 0°/180° identically (it reads flipped text as
   confident gibberish) and accurate OCR silently auto-corrects all four
   orientations, so neither can vote by score alone. Instead: fast OCR picks

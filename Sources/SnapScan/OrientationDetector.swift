@@ -89,7 +89,7 @@ nonisolated enum OrientationDetector {
         return median
     }
 
-    private static func downsampled(_ image: CGImage, maxDimension: Int) -> CGImage? {
+    static func downsampled(_ image: CGImage, maxDimension: Int) -> CGImage? {
         let largest = max(image.width, image.height)
         guard largest > maxDimension else { return image }
         let scale = Double(maxDimension) / Double(largest)

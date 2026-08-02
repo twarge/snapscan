@@ -90,6 +90,8 @@ nonisolated struct ScanSettings: Codable {
     /// The first-run folder prompt has been shown.
     var promptedForFolder: Bool = false
     var appendScans: Bool = true
+    /// Name new scans after their contents, using the on-device model.
+    var suggestNames: Bool = true
     var menuBarOnly: Bool = false
     var launchAtLogin: Bool = false
 
@@ -127,6 +129,8 @@ nonisolated struct ScanSettings: Codable {
             ?? defaults.destinationPath
         appendScans =
             try c.decodeIfPresent(Bool.self, forKey: .appendScans) ?? defaults.appendScans
+        suggestNames =
+            try c.decodeIfPresent(Bool.self, forKey: .suggestNames) ?? defaults.suggestNames
         menuBarOnly =
             try c.decodeIfPresent(Bool.self, forKey: .menuBarOnly) ?? defaults.menuBarOnly
         launchAtLogin =
@@ -205,6 +209,9 @@ final class ActiveDocument: Identifiable {
     var processingRemaining = 0
     /// A save should run when processing drains.
     var needsFinalSave = false
+    /// A name has already been proposed for this document; later batches
+    /// appended to it don't re-open the question.
+    var didSuggestName = false
 
     var displayName: String {
         url?.deletingPathExtension().lastPathComponent ?? pendingName ?? ""

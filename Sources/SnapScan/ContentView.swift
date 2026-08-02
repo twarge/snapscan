@@ -118,6 +118,8 @@ struct ContentView: View {
         case .idle:
             if engine.isSaving {
                 "Saving…"
+            } else if engine.isNaming {
+                "Naming…"
             } else if engine.isProcessingAnywhere {
                 "Straightening…"
             } else {
@@ -411,10 +413,10 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(engine.isBusy || engine.isSaving || engine.pages.isEmpty)
                 .help("Commit the name and finish — shows the saved PDF")
-            if engine.isSaving {
+            if engine.isSaving || engine.isNaming {
                 ProgressView()
                     .controlSize(.small)
-                    .help("Saving the PDF…")
+                    .help(engine.isSaving ? "Saving the PDF…" : "Reading the scan for a name…")
             }
         }
         .font(.title3)

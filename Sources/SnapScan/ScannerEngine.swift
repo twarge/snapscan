@@ -25,6 +25,9 @@ final class ScannerEngine {
     /// actor, so the UI stays live and can show it.
     var isSaving = false
 
+    /// True while the on-device model is reading the scan to propose a name.
+    var isNaming = false
+
     /// The page currently coming out of the scanner, updated as rows arrive.
     var livePageImage: CGImage?
     var livePageFraction: Double?
@@ -200,6 +203,9 @@ final class ScannerEngine {
             if document.processingRemaining > 0 {
                 document.needsFinalSave = true
             }
+            // Reading the page and asking the model for a name takes a couple
+            // of seconds — unattached, so the next sheet can go in meanwhile.
+            Task { await self.suggestName(for: document) }
             if !settings.appendScans {
                 document.isOpen = false
             }
@@ -416,6 +422,39 @@ final class ScannerEngine {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         return "Scan \(formatter.string(from: Date()))"
+    }
+
+    /// Whether a name is one this app made up rather than one someone chose —
+    /// including the " (2)" a collision adds. Only such a name gets replaced
+    /// by a suggestion.
+    nonisolated static func isDefaultDocumentName(_ name: String) -> Bool {
+        name.wholeMatch(
+            of: /Scan \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}( \(\d+\))?/) != nil
+    }
+
+    // MARK: - Suggested names
+
+    /// Names a new document after what's written on it, when the on-device
+    /// model can read enough to say. Silent on failure: an unnamed scan keeps
+    /// its timestamp, which is no worse than before.
+    private func suggestName(for document: ActiveDocument) async {
+        guard settings.suggestNames, !document.didSuggestName else { return }
+        // Anything but the timestamp name was chosen deliberately.
+        guard Self.isDefaultDocumentName(document.displayName) else { return }
+        document.didSuggestName = true
+
+        let images = document.pages.prefix(NameSuggester.pagesRead).map(\.image)
+        isNaming = true
+        let suggestion = await NameSuggester.suggest(for: Array(images))
+        isNaming = false
+
+        guard let suggestion else { return }
+        // The document may have been finished, discarded, or named by hand
+        // while the model was reading it.
+        guard current === document,
+            Self.isDefaultDocumentName(document.displayName)
+        else { return }
+        renameDocument(to: suggestion)
     }
 
     private func uniqueDocumentURL(in directory: URL, base: String) -> URL {
