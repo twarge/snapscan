@@ -60,10 +60,18 @@ within ~5 mm per axis — receipts and other odd sizes keep their exact
 measured dimensions. Snapped pages are centered on the standard-size PDF
 page; the page cell shows what was decided.
 
+**Compression** (Saving ▸ Compression) trades file size against fidelity.
+A 300 dpi colour page costs about 12 MB stored losslessly, so a ten-page
+duplex batch runs past 100 MB; the lossy levels store each page as JPEG
+inside the PDF — roughly 2.5 MB a page on Light, 1 MB on Medium (the
+default), 0.5 MB on Maximum. Black & white scans are 1 bit a pixel and are
+always stored losslessly, whatever the setting: JPEG would enlarge them and
+blur the edges they exist to keep sharp.
+
 All settings live in SnapScan ▸ Settings (⌘,): sides, color mode, 150–600
 dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
-folder, suggested names, the hardware button toggle, menu-bar-only mode, and
-start-at-login.
+folder, compression, suggested names, the hardware button toggle,
+menu-bar-only mode, and start-at-login.
 
 **Menu bar mode** hides the Dock icon and puts a scanner icon in the menu
 bar (click it for status, a Scan button, and Quit). Scans started with the
@@ -113,24 +121,26 @@ and uses the async Swift Vision API.
   such documents appear as spinner rows in the sidebar until their final
   PDF is written.
 - `Sources/SnapScan/OrientationDetector.swift` — auto-rotate and deskew.
+  Accurate OCR reads text at any rotation but keeps its observation quads
+  in the *given* coordinate space, so the circular mean of the text lines'
+  topLeft→topRight vectors encodes the page's rotation directly — rounding
+  it to the nearest 90° gives the correction in one pass. (An older
+  two-step fast/accurate scheme is gone: fast recognition no longer sees
+  enough text to vote.) Rotation itself is an exact per-pixel permutation
+  (rasterizing a 90° rotation through CGContext corrupts edge pixels).
+  "Straighten pages" deskews in-app from the median tilt of Vision's
+  text-line quads, gated on evidence (≥4 wide lines, consistent angles,
+  0.25–6°) — sparse pages are deliberately left alone. (A backend-side
+  deskew was tried and abandoned: its estimator tilts straight-but-sparse
+  pages.)
 - `Sources/SnapScan/NameSuggester.swift` — reads the first pages with
   Vision and asks the on-device model for a filename; falls back to the
   page's heading where there's no model.
-  Vision's fast OCR scores 0°/180° identically (it reads flipped text as
-  confident gibberish) and accurate OCR silently auto-corrects all four
-  orientations, so neither can vote by score alone. Instead: fast OCR picks
-  the text *axis* (horizontal vs vertical), then one accurate pass checks
-  whether reading order flows down the page — if the first-read line sits
-  at the bottom, the page is flipped 180°. Rotation itself is an exact
-  per-pixel permutation (rasterizing a 90° rotation through CGContext
-  corrupts edge pixels). "Straighten pages" deskews in-app from the median
-  tilt of Vision's text-line quads, gated on evidence (≥4 wide lines,
-  consistent angles, 0.25–6°) — sparse pages are deliberately left alone.
-  (A backend-side deskew was tried and abandoned: its estimator tilts
-  straight-but-sparse pages.)
 - `Sources/SnapScan/FrameImage.swift` — builds CGImages from raw scanner
   frames (including partial pages mid-scan).
 - `Sources/SnapScan/PDFBuilder.swift` — assembles pages into a PDF at true
+  size, optionally re-encoding each page as JPEG so the PDF carries the
+  compressed stream directly (`/DCTDecode`) instead of raw pixels.
   physical size (pixels ÷ dpi × 72 points), centering size-snapped pages.
 - `scripts/make-icon.swift` — the app icon's source; only run if
   `Support/AppIcon.icns` is ever deleted.

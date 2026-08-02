@@ -71,6 +71,43 @@ nonisolated enum PaperSize: String, CaseIterable, Identifiable {
     }
 }
 
+/// How hard the PDF squeezes its page images.
+///
+/// Measured on a 300 dpi colour page: stored losslessly it costs about
+/// 12.6 MB, so a ten-page duplex batch runs past 100 MB. The lossy levels are
+/// JPEG, which the PDF carries directly. JPEG 2000 was measured too — about
+/// 0.5–1 dB better at the same size, but 25–50× slower to encode and less
+/// widely readable, so it isn't offered.
+nonisolated enum PDFCompression: String, CaseIterable, Identifiable {
+    case none = "None"
+    case light = "Light"
+    case medium = "Medium"
+    case maximum = "Maximum"
+
+    var id: String { rawValue }
+
+    /// nil keeps the page lossless.
+    var jpegQuality: Double? {
+        switch self {
+        case .none: nil
+        case .light: 0.85
+        case .medium: 0.6
+        case .maximum: 0.4
+        }
+    }
+
+    /// Rough cost of one 300 dpi colour page, from measurements on a real
+    /// scan — enough to choose by, not a promise.
+    var label: String {
+        switch self {
+        case .none: "None — about 12 MB a page, nothing discarded"
+        case .light: "Light — about 2.5 MB a page"
+        case .medium: "Medium — about 1 MB a page"
+        case .maximum: "Maximum — about 0.5 MB a page, softer text"
+        }
+    }
+}
+
 nonisolated struct ScanSettings: Codable {
     var source: ScanSource = .duplex
     var mode: ScanMode = .color
@@ -92,6 +129,7 @@ nonisolated struct ScanSettings: Codable {
     var appendScans: Bool = true
     /// Name new scans after their contents, using the on-device model.
     var suggestNames: Bool = true
+    var compression: PDFCompression = .medium
     var menuBarOnly: Bool = false
     var launchAtLogin: Bool = false
 
@@ -131,6 +169,8 @@ nonisolated struct ScanSettings: Codable {
             try c.decodeIfPresent(Bool.self, forKey: .appendScans) ?? defaults.appendScans
         suggestNames =
             try c.decodeIfPresent(Bool.self, forKey: .suggestNames) ?? defaults.suggestNames
+        compression =
+            try c.decodeIfPresent(PDFCompression.self, forKey: .compression) ?? defaults.compression
         menuBarOnly =
             try c.decodeIfPresent(Bool.self, forKey: .menuBarOnly) ?? defaults.menuBarOnly
         launchAtLogin =
@@ -161,6 +201,7 @@ nonisolated struct ScanSettings: Codable {
 extension ScanSource: Codable {}
 extension ScanMode: Codable {}
 extension PaperSize: Codable {}
+extension PDFCompression: Codable {}
 
 /// Resolves and caches security-scoped destination folders. Each distinct
 /// bookmark starts access once for the app's lifetime (the matching stop is

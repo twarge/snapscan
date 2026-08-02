@@ -36,6 +36,62 @@ import Testing
         #expect(abs(second.bounds(for: .mediaBox).width - 72) < 0.5)
     }
 
+    /// A page of real tones, so compression has something to work on — a flat
+    /// fill would compress to nothing at every setting and prove nothing.
+    private func makeTexturedPage(width: Int, height: Int) throws -> ScannedPage {
+        var pixels = Data(count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                let wave = 128 + 100 * sin(Double(x) / 7) * cos(Double(y) / 11)
+                pixels[y * width + x] = UInt8(max(0, min(255, wave)))
+            }
+        }
+        let image = try #require(
+            FrameImage.make(
+                pixels: pixels, width: width, height: height,
+                bytesPerRow: width, format: .gray8))
+        return ScannedPage(image: image, dpi: 300)
+    }
+
+    private func size(of pages: [ScannedPage], _ compression: PDFCompression) throws -> Int {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("snapscan-test-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try PDFBuilder.write(pages: pages, to: url, compression: compression)
+        // Every level must still produce a readable PDF.
+        #expect(PDFDocument(url: url)?.pageCount == pages.count)
+        return try #require(try? Data(contentsOf: url).count)
+    }
+
+    @Test func compressionLevelsShrinkThePDFInOrder() throws {
+        let pages = [try makeTexturedPage(width: 1200, height: 1600)]
+        let lossless = try size(of: pages, .none)
+        let light = try size(of: pages, .light)
+        let medium = try size(of: pages, .medium)
+        let maximum = try size(of: pages, .maximum)
+
+        #expect(light < lossless)
+        #expect(medium < light)
+        #expect(maximum < medium)
+        // The point of the feature: the default is far smaller than lossless.
+        #expect(medium < lossless / 2)
+    }
+
+    /// Lineart is 1 bit a pixel. JPEG would enlarge it and blur the edges, so
+    /// it stays lossless no matter what the setting says.
+    @Test func lineartIgnoresCompression() throws {
+        let width = 1200
+        let height = 1600
+        var pixels = Data(count: width / 8 * height)
+        for i in 0..<pixels.count { pixels[i] = i % 3 == 0 ? 0xF0 : 0x0F }
+        let image = try #require(
+            FrameImage.make(
+                pixels: pixels, width: width, height: height,
+                bytesPerRow: width / 8, format: .mono1))
+        let pages = [ScannedPage(image: image, dpi: 300)]
+        #expect(try size(of: pages, .maximum) == (try size(of: pages, .none)))
+    }
+
     @Test func snappedPageUsesStandardSizeWithCenteredImage() throws {
         var page = try makePage(width: 2500, height: 3250, dpi: 300)
         page.snappedSizeMM = CGSize(width: 215.9, height: 279.4)

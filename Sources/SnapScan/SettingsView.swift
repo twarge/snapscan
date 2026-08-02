@@ -59,6 +59,14 @@ struct SettingsView: View {
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                Picker("Compression", selection: $engine.settings.compression) {
+                    ForEach(PDFCompression.allCases) { level in
+                        Text(level.rawValue).tag(level)
+                    }
+                }
+                Text(engine.settings.compression.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("Suggest a name from the document", isOn: $engine.settings.suggestNames)
                 Text(
                     "Reads the first two pages and proposes a filename. "

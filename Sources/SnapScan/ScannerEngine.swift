@@ -404,8 +404,9 @@ final class ScannerEngine {
             isSaving = true
             defer { isSaving = false }
             let pages = document.pages
+            let compression = settings.compression
             try await Task.detached(priority: .userInitiated) {
-                try PDFBuilder.write(pages: pages, to: staging)
+                try PDFBuilder.write(pages: pages, to: staging, compression: compression)
             }.value
             if FileManager.default.fileExists(atPath: url.path) {
                 _ = try FileManager.default.replaceItemAt(url, withItemAt: staging)
