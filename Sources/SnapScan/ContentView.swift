@@ -116,9 +116,13 @@ struct ContentView: View {
         case .scanning(let page): "Scanning page \(page)…"
         case .noScanner: "Scanner not connected"
         case .idle:
-            engine.isProcessingAnywhere
-                ? "Straightening…"
-                : engine.scannerName ?? ""
+            if engine.isSaving {
+                "Saving…"
+            } else if engine.isProcessingAnywhere {
+                "Straightening…"
+            } else {
+                engine.scannerName ?? ""
+            }
         }
     }
 
@@ -397,15 +401,21 @@ struct ContentView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($nameFieldFocused)
                 .onSubmit { finalizeDocument() }
+                .disabled(engine.isSaving)
             Text(".pdf")
                 .foregroundStyle(.secondary)
             Button("Discard", role: .destructive) { discardScan() }
-                .disabled(engine.isBusy)
+                .disabled(engine.isBusy || engine.isSaving)
                 .help("Throw this scan away — the PDF moves to the Trash")
             Button("Done") { finalizeDocument() }
                 .buttonStyle(.borderedProminent)
-                .disabled(engine.isBusy || engine.pages.isEmpty)
+                .disabled(engine.isBusy || engine.isSaving || engine.pages.isEmpty)
                 .help("Commit the name and finish — shows the saved PDF")
+            if engine.isSaving {
+                ProgressView()
+                    .controlSize(.small)
+                    .help("Saving the PDF…")
+            }
         }
         .font(.title3)
         .padding(.horizontal, 12)

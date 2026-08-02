@@ -21,6 +21,9 @@ final class ScannerEngine {
     var scannerPresent = false
     var lastError: String?
     var feederWasEmpty = false
+    /// True while a PDF is being written. The write runs off the main
+    /// actor, so the UI stays live and can show it.
+    var isSaving = false
 
     /// The page currently coming out of the scanner, updated as rows arrive.
     var livePageImage: CGImage?
@@ -193,7 +196,7 @@ final class ScannerEngine {
         if !document.pages.isEmpty {
             // Save now with whatever images exist (crash-safe); straightened
             // pages trigger a rewrite as they drain.
-            save(document)
+            await save(document)
             if document.processingRemaining > 0 {
                 document.needsFinalSave = true
             }
@@ -281,15 +284,15 @@ final class ScannerEngine {
                 }
             }
             document.processingRemaining -= 1
-            self.processingDrained(for: document)
+            await self.processingDrained(for: document)
         }
     }
 
-    private func processingDrained(for document: ActiveDocument) {
+    private func processingDrained(for document: ActiveDocument) async {
         guard document.processingRemaining == 0 else { return }
         if document.needsFinalSave {
             document.needsFinalSave = false
-            save(document)
+            await save(document)
         }
         if document.isRetired {
             backgroundDocuments.removeAll { $0.id == document.id }
@@ -377,7 +380,7 @@ final class ScannerEngine {
     // MARK: - Document persistence
 
     /// Writes/rewrites a document's PDF in the destination folder.
-    private func save(_ document: ActiveDocument) {
+    private func save(_ document: ActiveDocument) async {
         guard !document.pages.isEmpty else { return }
         do {
             let directory = settings.destinationURL
@@ -390,7 +393,14 @@ final class ScannerEngine {
             }
             guard let url = document.url else { return }
             let staging = sessionDirectory.appendingPathComponent("staging-\(document.id).pdf")
-            try PDFBuilder.write(pages: document.pages, to: staging)
+            // Rendering pages into a PDF is the slow part — tens of
+            // megabytes per page — so it runs off the main actor.
+            isSaving = true
+            defer { isSaving = false }
+            let pages = document.pages
+            try await Task.detached(priority: .userInitiated) {
+                try PDFBuilder.write(pages: pages, to: staging)
+            }.value
             if FileManager.default.fileExists(atPath: url.path) {
                 _ = try FileManager.default.replaceItemAt(url, withItemAt: staging)
             } else {
@@ -443,7 +453,7 @@ final class ScannerEngine {
             current = nil
             ScanLibrary.shared.refresh()
         } else {
-            save(document)
+            Task { await save(document) }
         }
     }
 
