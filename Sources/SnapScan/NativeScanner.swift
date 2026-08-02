@@ -303,8 +303,19 @@ actor NativeScanner {
         let linesPerRead = max(1, (256 * 1024) / bytesPerLine)
         let chunkLength = linesPerRead * bytesPerLine
 
+        // Tell the scanner the read size about to be used for this window so
+        // it can keep that buffer filled while the sheet moves — the
+        // reference stack sends this between the pixel-size read and the
+        // image reads. Refusal is not fatal; the scan works either way.
+        let (armStatus, _) = try transport.send(
+            cdb: ScannerCommands.armReadAhead(window: window, length: chunkLength))
+        if armStatus == .checkCondition { _ = try? Self.sense(transport) }
+
         var buffer = Data()
-        buffer.reserveCapacity(chunkLength * 8)
+        // Reserve the whole page up front: growing a 25–100 MB buffer by
+        // repeated reallocation copies it many times over.
+        buffer.reserveCapacity(
+            size.lines > 0 ? bytesPerLine * size.lines : chunkLength * 8)
         var lastPartial = ContinuousClock.now
 
         readLoop: while true {

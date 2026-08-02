@@ -110,6 +110,20 @@ nonisolated enum ScannerCommands {
         [Opcode.scannerControl.rawValue, subcommand, 0, 0, 0, 0]
     }
 
+    /// Vendor `0xF1` subcommand `0x10`: announces the read size the host is
+    /// about to use for a window, so the scanner can keep that window's
+    /// buffer filled. Observed immediately after SCAN, once per window,
+    /// carrying the same length as the image reads that follow.
+    static func armReadAhead(window: Window, length: Int) -> [UInt8] {
+        [
+            Opcode.scannerControl.rawValue, 0x10, window.rawValue, 0, 0, 0,
+            UInt8((length >> 16) & 0xFF),
+            UInt8((length >> 8) & 0xFF),
+            UInt8(length & 0xFF),
+            0,
+        ]
+    }
+
     // MARK: - Setup payloads
     //
     // The initialization sequence observed in every capture. Values whose
