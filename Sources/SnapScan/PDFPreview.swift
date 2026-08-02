@@ -33,6 +33,10 @@ final class ArrowCursorPDFView: PDFView {
 
 struct PDFPreview: NSViewRepresentable {
     let url: URL
+    /// Called when the PDF can't be opened — the file moved out of reach,
+    /// was replaced, or is unreadable. The caller drops it from the list
+    /// rather than leaving an empty pane on screen.
+    var onUnreadable: () -> Void = {}
 
     final class Coordinator {
         var loadedURL: URL?
@@ -59,7 +63,13 @@ struct PDFPreview: NSViewRepresentable {
         else { return }
         context.coordinator.loadedURL = url
         context.coordinator.loadedDate = modified
-        view.document = PDFDocument(url: url)
+        let document = PDFDocument(url: url)
+        view.document = document
+        if document == nil {
+            // Deferred: this runs inside a view update.
+            let report = onUnreadable
+            DispatchQueue.main.async(execute: report)
+        }
         Self.adoptSafeAreaInsets(in: view)
     }
 

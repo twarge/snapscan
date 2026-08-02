@@ -73,7 +73,7 @@ final class ScanLibrary {
         refresh()
     }
 
-    /// Resolves every bookmark, dropping entries that no longer reach a file.
+    /// Resolves every bookmark, dropping entries the app can no longer open.
     func refresh() {
         var resolved: [ScanDocument] = []
         var surviving: [Entry] = []
@@ -87,7 +87,7 @@ final class ScanLibrary {
                     options: [.withoutUI],
                     relativeTo: nil,
                     bookmarkDataIsStale: &isStale),
-                FileManager.default.fileExists(atPath: url.path),
+                Self.isPreviewable(url),
                 !url.path.contains("/.Trash/")
             else {
                 changed = true
@@ -112,6 +112,16 @@ final class ScanLibrary {
             save()
         }
         documents = resolved
+    }
+
+    /// Whether the app can actually open this file, not merely see that it
+    /// exists. A scan dragged somewhere outside the sandbox's reach still
+    /// exists on disk, but nothing can be previewed from it — so it should
+    /// leave the list rather than sit there showing an empty pane.
+    private static func isPreviewable(_ url: URL) -> Bool {
+        // `access(2)`, which this consults, honours the sandbox: a readable
+        // path is one this process may genuinely open.
+        FileManager.default.isReadableFile(atPath: url.path)
     }
 
     // MARK: - Change triggers

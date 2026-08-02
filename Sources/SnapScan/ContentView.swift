@@ -316,8 +316,12 @@ struct ContentView: View {
     @ViewBuilder
     private var detail: some View {
         if let selection {
-            PDFPreview(url: selection)
-                .ignoresSafeArea()
+            PDFPreview(url: selection) {
+                // The file became unopenable while shown — drop it from the
+                // list; the library change clears the selection below.
+                library.refresh()
+            }
+            .ignoresSafeArea()
         } else if !sessionActive {
             emptyState
         } else {
