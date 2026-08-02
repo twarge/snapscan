@@ -14,6 +14,8 @@ struct DragRow<Content: View>: NSViewRepresentable {
     let onMoved: (URL) -> Void
     /// Called after the file is trashed from the context menu.
     var onTrash: () -> Void = {}
+    /// Called when Rename is chosen; the row opens its inline name field.
+    var onRename: () -> Void = {}
     @ViewBuilder let content: () -> Content
 
     func makeNSView(context: Context) -> DragRowView {
@@ -21,7 +23,7 @@ struct DragRow<Content: View>: NSViewRepresentable {
         view.hosted = NSHostingView(rootView: AnyView(content()))
         view.configure(
             url: url, interceptsClicks: interceptsClicks,
-            onSelect: onSelect, onMoved: onMoved, onTrash: onTrash)
+            onSelect: onSelect, onMoved: onMoved, onTrash: onTrash, onRename: onRename)
         return view
     }
 
@@ -29,7 +31,7 @@ struct DragRow<Content: View>: NSViewRepresentable {
         view.hosted?.rootView = AnyView(content())
         view.configure(
             url: url, interceptsClicks: interceptsClicks,
-            onSelect: onSelect, onMoved: onMoved, onTrash: onTrash)
+            onSelect: onSelect, onMoved: onMoved, onTrash: onTrash, onRename: onRename)
     }
 }
 
@@ -40,18 +42,20 @@ final class DragRowView: NSView, NSDraggingSource {
     private var onSelect: () -> Void = {}
     private var onMoved: (URL) -> Void = { _ in }
     fileprivate var onTrash: () -> Void = {}
+    private var onRename: () -> Void = {}
     private var mouseDownLocation: NSPoint?
 
     func configure(
         url: URL, interceptsClicks: Bool,
         onSelect: @escaping () -> Void, onMoved: @escaping (URL) -> Void,
-        onTrash: @escaping () -> Void = {}
+        onTrash: @escaping () -> Void = {}, onRename: @escaping () -> Void = {}
     ) {
         self.url = url
         self.interceptsClicks = interceptsClicks
         self.onSelect = onSelect
         self.onMoved = onMoved
         self.onTrash = onTrash
+        self.onRename = onRename
         if let hosted, hosted.superview == nil {
             hosted.translatesAutoresizingMaskIntoConstraints = false
             addSubview(hosted)
@@ -78,6 +82,7 @@ final class DragRowView: NSView, NSDraggingSource {
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
         for (title, selector) in [
+            ("Rename", #selector(rename)),
             ("Copy PDF", #selector(copyPDF)),
             ("Reveal in Finder", #selector(revealInFinder)),
             ("Move to Trash", #selector(moveToTrash)),
@@ -88,6 +93,12 @@ final class DragRowView: NSView, NSDraggingSource {
             menu.addItem(item)
         }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    /// Opens the row's inline name field — the same one a click-pause-click
+    /// gives, so the rename itself behaves identically either way.
+    @objc private func rename() {
+        onRename()
     }
 
     /// Puts the file itself on the pasteboard, so pasting into the Finder,

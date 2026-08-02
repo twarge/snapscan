@@ -159,6 +159,12 @@ struct ContentView: View {
                     } onTrash: {
                         if selection == document.url { selection = nil }
                         library.refresh()
+                    } onRename: {
+                        // Deliberately without selecting the row: renaming
+                        // shouldn't swap what the detail pane is showing, and
+                        // navigating away would finalize an open scan.
+                        renamePendingID = nil
+                        beginRename(document)
                     } content: {
                         documentRow(document, isSelected: selection == document.url)
                     }
