@@ -43,13 +43,24 @@ func drawIcon(canvas: CGFloat) -> NSImage {
     page.fill()
     NSGraphicsContext.current?.restoreGraphicsState()
 
-    // Text lines on the page.
+    // The beam is the dividing line: paper above it, data below.
+    let splitY = rect.midY
+    let textInset = pageWidth * 0.14
+    let textWidth = pageWidth * 0.72
+
+    // Text lines on the paper half.
+    NSGraphicsContext.current?.saveGraphicsState()
+    NSBezierPath(
+        rect: NSRect(
+            x: pageRect.minX, y: splitY,
+            width: pageRect.width, height: pageRect.maxY - splitY)
+    ).setClip()
     NSColor(calibratedWhite: 0.75, alpha: 1).setFill()
     let lineHeight = pageHeight * 0.045
     for i in 0..<6 {
         let width = pageWidth * (i == 5 ? 0.45 : 0.72)
         let lineRect = NSRect(
-            x: pageRect.minX + pageWidth * 0.14,
+            x: pageRect.minX + textInset,
             y: pageRect.maxY - pageHeight * (0.18 + CGFloat(i) * 0.13),
             width: width,
             height: lineHeight)
@@ -57,6 +68,72 @@ func drawIcon(canvas: CGFloat) -> NSImage {
             roundedRect: lineRect, xRadius: lineHeight / 2, yRadius: lineHeight / 2
         ).fill()
     }
+    NSGraphicsContext.current?.restoreGraphicsState()
+
+    // Below the beam the page has already been read: the paper backing goes
+    // dark and its contents come back as glowing hex, brightest just under
+    // the beam where the scan is freshest.
+    NSGraphicsContext.current?.saveGraphicsState()
+    page.setClip()
+    NSBezierPath(
+        rect: NSRect(
+            x: pageRect.minX, y: pageRect.minY,
+            width: pageRect.width, height: splitY - pageRect.minY)
+    ).addClip()
+    NSColor(calibratedRed: 0.02, green: 0.07, blue: 0.04, alpha: 1).setFill()
+    NSBezierPath(rect: pageRect).fill()
+
+    // A fixed seed, so regenerating the iconset reproduces this exact icon
+    // rather than a new scatter of digits every time.
+    var seed: UInt64 = 0x5CA1_AB1E
+    func random() -> CGFloat {
+        seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        return CGFloat(seed >> 40) / CGFloat(1 << 24)
+    }
+
+    let glyphs = Array("0123456789ABCDEF·×≡§¥")
+    let columns = 6
+    let rows = 5
+    let cellWidth = textWidth / CGFloat(columns)
+    let cellHeight = (splitY - pageRect.minY - pageHeight * 0.06) / CGFloat(rows)
+    let fontSize = min(cellWidth, cellHeight) * 0.86
+    let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
+    let glyphGlow = NSShadow()
+    glyphGlow.shadowColor = NSColor(calibratedRed: 0.2, green: 1.0, blue: 0.35, alpha: 0.95)
+    glyphGlow.shadowBlurRadius = canvas * 0.012
+    glyphGlow.set()
+
+    // Each column sits at its own height, so the digits fall in streaks
+    // instead of lining up into a table.
+    let columnOffsets = (0..<columns).map { _ in (random() - 0.5) * cellHeight * 0.55 }
+
+    for row in 0..<rows {
+        // Fade with distance below the beam, like the tail of a rain column.
+        let depth = CGFloat(row) / CGFloat(rows - 1)
+        for column in 0..<columns {
+            // Gaps keep it reading as falling code rather than a filled grid.
+            if random() < 0.18 { continue }
+            let glyph = String(glyphs[Int(random() * CGFloat(glyphs.count - 1))])
+            // A few glyphs burn white-green: the head of a trail.
+            let isHead = random() < 0.16
+            let color =
+                isHead
+                ? NSColor(calibratedRed: 0.82, green: 1.0, blue: 0.86, alpha: 1)
+                : NSColor(
+                    calibratedRed: 0.15, green: 1.0, blue: 0.38,
+                    alpha: 0.95 - depth * 0.45 - random() * 0.2)
+            let text = NSAttributedString(
+                string: glyph, attributes: [.font: font, .foregroundColor: color])
+            let size = text.size()
+            text.draw(
+                at: NSPoint(
+                    x: pageRect.minX + textInset + CGFloat(column) * cellWidth
+                        + (cellWidth - size.width) / 2,
+                    y: splitY - pageHeight * 0.03 - CGFloat(row + 1) * cellHeight
+                        + (cellHeight - size.height) / 2 + columnOffsets[column]))
+        }
+    }
+    NSGraphicsContext.current?.restoreGraphicsState()
 
     // Scan beam.
     let beamHeight = rect.height * 0.055
