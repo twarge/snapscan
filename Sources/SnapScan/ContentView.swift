@@ -402,30 +402,41 @@ struct ContentView: View {
     }
 
     private var documentHeader: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "character.cursor.ibeam")
-                .foregroundStyle(.secondary)
-            TextField("Document name", text: $draftName)
-                .textFieldStyle(.roundedBorder)
-                .focused($nameFieldFocused)
-                .onSubmit { finalizeDocument() }
-                .disabled(engine.isSaving)
-            Text(".pdf")
-                .foregroundStyle(.secondary)
-            Button("Discard", role: .destructive) { discardScan() }
-                .disabled(engine.isBusy || engine.isSaving)
-                .help("Throw this scan away — the PDF moves to the Trash")
-            Button("Done") { finalizeDocument() }
-                .buttonStyle(.borderedProminent)
-                .disabled(engine.isBusy || engine.isSaving || engine.pages.isEmpty)
-                .help("Commit the name and finish — shows the saved PDF")
-            if engine.isSaving || engine.isNaming {
-                ProgressView()
-                    .controlSize(.small)
-                    .help(engine.isSaving ? "Saving the PDF…" : "Reading the scan for a name…")
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: "character.cursor.ibeam")
+                    .foregroundStyle(.secondary)
+                TextField("Document name", text: $draftName)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($nameFieldFocused)
+                    .onSubmit { finalizeDocument() }
+                    .disabled(engine.isSaving)
+                Text(".pdf")
+                    .foregroundStyle(.secondary)
+                Button("Discard", role: .destructive) { discardScan() }
+                    .disabled(engine.isBusy || engine.isSaving)
+                    .help("Throw this scan away — the PDF moves to the Trash")
+                Button("Done") { finalizeDocument() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(engine.isBusy || engine.isSaving || engine.pages.isEmpty)
+                    .help("Commit the name and finish — shows the saved PDF")
             }
+            .font(.title3)
+
+            // Always laid out, even when empty: the header must not jump as
+            // work starts and finishes.
+            HStack(spacing: 5) {
+                if let activity = engine.activity {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(activity)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(height: 16, alignment: .leading)
+            .padding(.leading, 2)
         }
-        .font(.title3)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)

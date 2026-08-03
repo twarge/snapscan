@@ -125,6 +125,35 @@ final class ScannerEngine {
             || backgroundDocuments.contains { $0.processingRemaining > 0 }
     }
 
+    /// What is happening to the current document right now, for the status
+    /// line under its name. nil when nothing is in flight.
+    var activity: String? {
+        var scanningPage: Int?
+        if case .scanning(let page) = status { scanningPage = page }
+        return Self.activityDescription(
+            scanningPage: scanningPage,
+            isSaving: isSaving,
+            isNaming: isNaming,
+            pagesProcessing: current?.processingRemaining ?? 0)
+    }
+
+    /// The phases overlap — pages straighten while the next sheet feeds, and
+    /// naming runs alongside straightening — so they're reported in the order
+    /// that matters to someone waiting: what holds the paper, then what holds
+    /// the controls, then the background work.
+    nonisolated static func activityDescription(
+        scanningPage: Int?, isSaving: Bool, isNaming: Bool, pagesProcessing: Int
+    ) -> String? {
+        if let scanningPage { return "Scanning page \(scanningPage)…" }
+        if isSaving { return "Saving the PDF…" }
+        if isNaming { return "Reading the scan to suggest a name…" }
+        if pagesProcessing > 0 {
+            return "Straightening \(pagesProcessing) page"
+                + (pagesProcessing == 1 ? "…" : "s…")
+        }
+        return nil
+    }
+
     // MARK: - Detection
 
     func detectScanner() async {

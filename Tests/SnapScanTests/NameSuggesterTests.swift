@@ -116,6 +116,26 @@ import Testing
         #expect(NameSuggester.headingSuggestion(from: []) == nil)
     }
 
+    /// The phases overlap, so the status line has to pick one. Scanning wins
+    /// over everything (it's what holds the paper), then saving (it holds the
+    /// controls), then naming, then background straightening.
+    @Test func activityReportsThePhaseThatMatters() {
+        func describe(page: Int? = nil, saving: Bool = false, naming: Bool = false, processing: Int = 0)
+            -> String?
+        {
+            ScannerEngine.activityDescription(
+                scanningPage: page, isSaving: saving, isNaming: naming,
+                pagesProcessing: processing)
+        }
+        #expect(describe() == nil)
+        #expect(describe(page: 3) == "Scanning page 3…")
+        #expect(describe(page: 3, saving: true, processing: 2) == "Scanning page 3…")
+        #expect(describe(saving: true, naming: true, processing: 2) == "Saving the PDF…")
+        #expect(describe(naming: true, processing: 2) == "Reading the scan to suggest a name…")
+        #expect(describe(processing: 2) == "Straightening 2 pages…")
+        #expect(describe(processing: 1) == "Straightening 1 page…")
+    }
+
     /// Only app-generated names get replaced by a suggestion; anything the
     /// user typed has to survive.
     @Test func defaultNameRecognition() {
