@@ -67,6 +67,13 @@ struct SettingsView: View {
                 Text(engine.settings.compression.label)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle("Make scans searchable", isOn: $engine.settings.searchableText)
+                Text(
+                    "Reads every page and stores the text invisibly in the PDF, "
+                        + "so scans can be searched in Preview and found by Spotlight."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 Toggle("Suggest a name from the document", isOn: $engine.settings.suggestNames)
                 Text(
                     "Reads the first two pages and proposes a filename. "

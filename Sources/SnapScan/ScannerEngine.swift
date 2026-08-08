@@ -257,6 +257,7 @@ final class ScannerEngine {
             var page = ScannedPage(image: image, dpi: settings.resolution)
             let wantsProcessing =
                 settings.autoRotate || settings.deskew || settings.paperSize == .auto
+                || settings.searchableText
             page.isProcessing = wantsProcessing
             document.pages.append(page)
             livePageImage = nil
@@ -275,6 +276,7 @@ final class ScannerEngine {
         let autoRotate = settings.autoRotate
         let deskew = settings.deskew
         let autoSize = settings.paperSize == .auto
+        let searchable = settings.searchableText
         let dpi = settings.resolution
         guard let original = document.pages.first(where: { $0.id == pageID })?.image
         else {
@@ -307,7 +309,11 @@ final class ScannerEngine {
                         widthMM: Double(image.width) / Double(dpi) * 25.4,
                         heightMM: Double(image.height) / Double(dpi) * 25.4)
                 }
-                return (image: image, snapped: snapped)
+                // Read the page last: the text layer's coordinates have to
+                // describe the image as it will finally be drawn, after every
+                // crop and rotation.
+                let textLines = searchable ? await TextLayer.recognize(in: image) : []
+                return (image: image, snapped: snapped, textLines: textLines)
             }.value
 
             if let index = document.pages.firstIndex(where: { $0.id == pageID }) {
@@ -317,6 +323,7 @@ final class ScannerEngine {
                 document.pages[index].snappedSizeMM = result.snapped.map {
                     CGSize(width: $0.widthMM, height: $0.heightMM)
                 }
+                document.pages[index].textLines = result.textLines
             }
             document.processingRemaining -= 1
             await self.processingDrained(for: document)

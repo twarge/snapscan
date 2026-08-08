@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import PDFKit
 import Testing
@@ -90,6 +91,94 @@ import Testing
                 bytesPerRow: width / 8, format: .mono1))
         let pages = [ScannedPage(image: image, dpi: 300)]
         #expect(try size(of: pages, .maximum) == (try size(of: pages, .none)))
+    }
+
+    /// The point of the text layer: a picture of a page becomes a document
+    /// that ⌘F can find and Spotlight can index.
+    @Test func textLayerMakesTheScanSearchable() throws {
+        var page = try makePage(width: 1275, height: 1650, dpi: 150)
+        page.textLines = [
+            TextLayer.Line(
+                text: "Riverside Water Authority",
+                box: CGRect(x: 0.1, y: 0.86, width: 0.55, height: 0.03)),
+            TextLayer.Line(
+                text: "Amount due: $194.55",
+                box: CGRect(x: 0.1, y: 0.60, width: 0.40, height: 0.02)),
+        ]
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("snapscan-test-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try PDFBuilder.write(pages: [page], to: url)
+
+        let document = try #require(PDFDocument(url: url))
+        let text = try #require(document.string)
+        #expect(text.contains("Riverside Water Authority"))
+        #expect(text.contains("194.55"))
+        #expect(document.findString("water authority", withOptions: [.caseInsensitive]).count == 1)
+    }
+
+    /// Nothing recognized (a photo, a blank sheet) must still yield a valid
+    /// PDF rather than an empty or broken text layer.
+    @Test func pageWithoutRecognizedTextStillWrites() throws {
+        let page = try makePage(width: 600, height: 800, dpi: 150)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("snapscan-test-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try PDFBuilder.write(pages: [page], to: url)
+
+        let document = try #require(PDFDocument(url: url))
+        #expect(document.pageCount == 1)
+        #expect(document.string?.isEmpty != false)
+    }
+
+    /// The whole chain on a real page: recognize it, write the layer, search
+    /// the result. Catches coordinate mistakes that hand-built boxes can't.
+    @Test func recognizedTextRoundTripsIntoASearchablePDF() async throws {
+        let width = 1275
+        let height = 1650
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        NSAttributedString(
+            string: """
+                Riverside Water Authority
+                Quarterly statement for 69 Shore Road
+                Amount due: 194.55
+                """,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 46), .foregroundColor: NSColor.black,
+            ]
+        ).draw(in: NSRect(x: 90, y: 700, width: 1100, height: 800))
+        NSGraphicsContext.restoreGraphicsState()
+
+        var page = ScannedPage(image: context.makeImage()!, dpi: 150)
+        page.textLines = await TextLayer.recognize(in: page.image)
+        #expect(!page.textLines.isEmpty)
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("snapscan-test-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try PDFBuilder.write(pages: [page], to: url)
+
+        let document = try #require(PDFDocument(url: url))
+        #expect(document.findString("Riverside", withOptions: [.caseInsensitive]).count >= 1)
+        #expect(document.findString("Shore Road", withOptions: [.caseInsensitive]).count >= 1)
+
+        // The words must also land where they were read, or selecting text in
+        // Preview would highlight the wrong part of the page.
+        let heading = try #require(
+            document.findString("Riverside", withOptions: [.caseInsensitive]).first)
+        let bounds = heading.bounds(for: try #require(document.page(at: 0)))
+        let pageHeight = try #require(document.page(at: 0)).bounds(for: .mediaBox).height
+        // The heading was drawn in the upper third of the sheet.
+        #expect(bounds.midY > pageHeight * 0.6)
     }
 
     @Test func snappedPageUsesStandardSizeWithCenteredImage() throws {

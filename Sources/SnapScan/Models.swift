@@ -130,6 +130,8 @@ nonisolated struct ScanSettings: Codable {
     /// Name new scans after their contents, using the on-device model.
     var suggestNames: Bool = true
     var compression: PDFCompression = .medium
+    /// Write the recognized text into the PDF so scans are searchable.
+    var searchableText: Bool = true
     var menuBarOnly: Bool = false
     var launchAtLogin: Bool = false
 
@@ -171,6 +173,8 @@ nonisolated struct ScanSettings: Codable {
             try c.decodeIfPresent(Bool.self, forKey: .suggestNames) ?? defaults.suggestNames
         compression =
             try c.decodeIfPresent(PDFCompression.self, forKey: .compression) ?? defaults.compression
+        searchableText =
+            try c.decodeIfPresent(Bool.self, forKey: .searchableText) ?? defaults.searchableText
         menuBarOnly =
             try c.decodeIfPresent(Bool.self, forKey: .menuBarOnly) ?? defaults.menuBarOnly
         launchAtLogin =
@@ -273,6 +277,9 @@ nonisolated struct ScannedPage: Identifiable {
     /// the PDF page takes this size and the image is centered on it.
     var snappedSizeName: String?
     var snappedSizeMM: CGSize?
+    /// The page's words and their positions, written into the PDF as an
+    /// invisible layer so the scan can be searched and copied.
+    var textLines: [TextLayer.Line] = []
 
     var thumbnail: NSImage {
         NSImage(cgImage: image, size: naturalSizeInPoints)

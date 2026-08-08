@@ -43,6 +43,7 @@ nonisolated enum PDFBuilder {
                 compression.jpegQuality
                 .flatMap { jpegBacked(page.image, quality: $0) } ?? page.image
             context.draw(image, in: drawRect)
+            TextLayer.draw(page.textLines, in: drawRect, into: context)
             context.endPDFPage()
         }
         context.closePDF()

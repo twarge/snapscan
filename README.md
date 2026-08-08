@@ -60,6 +60,13 @@ within ~5 mm per axis — receipts and other odd sizes keep their exact
 measured dimensions. Snapped pages are centered on the standard-size PDF
 page; the page cell shows what was decided.
 
+**Searchable scans** (Saving ▸ Make scans searchable): every page is read
+with Vision and its words are written into the PDF as an invisible text
+layer over the image. ⌘F finds them in Preview, text can be selected and
+copied, and Spotlight indexes the contents — macOS's own PDF importer reads
+embedded text, so there's no importer here. The recognition rides along with
+the straightening pass that already runs per page.
+
 **Compression** (Saving ▸ Compression) trades file size against fidelity.
 A 300 dpi colour page costs about 12 MB stored losslessly, so a ten-page
 duplex batch runs past 100 MB; the lossy levels store each page as JPEG
@@ -70,8 +77,8 @@ blur the edges they exist to keep sharp.
 
 All settings live in SnapScan ▸ Settings (⌘,): sides, color mode, 150–600
 dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
-folder, compression, suggested names, the hardware button toggle,
-menu-bar-only mode, and start-at-login.
+folder, compression, searchable text, suggested names, the hardware button
+toggle, menu-bar-only mode, and start-at-login.
 
 **Menu bar mode** hides the Dock icon and puts a scanner icon in the menu
 bar (click it for status, a Scan button, and Quit). Scans started with the
@@ -133,6 +140,10 @@ and uses the async Swift Vision API.
   0.25–6°) — sparse pages are deliberately left alone. (A backend-side
   deskew was tried and abandoned: its estimator tilts straight-but-sparse
   pages.)
+- `Sources/SnapScan/TextLayer.swift` — recognizes a page's words and draws
+  them into the PDF in text rendering mode 3: searchable and selectable,
+  never painted. Coordinates are normalized, so they follow the image
+  rather than the sheet when a page is size-snapped.
 - `Sources/SnapScan/NameSuggester.swift` — reads the first pages with
   Vision and asks the on-device model for a filename; falls back to the
   page's heading where there's no model.
