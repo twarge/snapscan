@@ -44,6 +44,7 @@ final class DragRowView: NSView, NSDraggingSource {
     fileprivate var onTrash: () -> Void = {}
     private var onRename: () -> Void = {}
     private var mouseDownLocation: NSPoint?
+    private var sharePicker: NSSharingServicePicker?
 
     func configure(
         url: URL, interceptsClicks: Bool,
@@ -85,13 +86,26 @@ final class DragRowView: NSView, NSDraggingSource {
             ("Rename", #selector(rename)),
             ("Copy PDF", #selector(copyPDF)),
             ("Reveal in Finder", #selector(revealInFinder)),
-            ("Move to Trash", #selector(moveToTrash)),
         ] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
             item.target = self
-            if title == "Move to Trash" { menu.addItem(.separator()) }
             menu.addItem(item)
         }
+
+        // The system Share submenu — Mail, Messages, AirDrop, and whatever
+        // else the user has enabled — exactly as Finder presents it. The
+        // picker is held because the submenu is built from it while the menu
+        // is open.
+        let picker = NSSharingServicePicker(items: [url])
+        sharePicker = picker
+        menu.addItem(picker.standardShareMenuItem)
+
+        menu.addItem(.separator())
+        let trash = NSMenuItem(
+            title: "Move to Trash", action: #selector(moveToTrash), keyEquivalent: "")
+        trash.target = self
+        menu.addItem(trash)
+
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 

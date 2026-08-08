@@ -275,6 +275,7 @@ struct ContentView: View {
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([url])
                 }
+                ShareLink(item: url)
                 Divider()
             }
             Button("Discard Scan", role: .destructive) { discardScan() }
