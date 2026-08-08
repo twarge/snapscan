@@ -23,7 +23,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         engine.onHardwareScanFinished = { [weak self] in
             self?.toast.scanFinished(engine: ScannerEngine.shared)
+            // The file isn't final when the paper stops: straightening, the
+            // text layer and the save all still have to drain before there's
+            // anything worth pointing someone at.
+            Task { @MainActor in
+                let engine = ScannerEngine.shared
+                let pages = engine.pages.count
+                try? await engine.settle()
+                guard let url = engine.documentURL, pages > 0 else { return }
+                await ScanNotifier.shared.scanFinished(url: url, pages: pages)
+            }
         }
+        ScanNotifier.shared.start()
 
         if menuBarOnly {
             // The WindowGroup opens its window on launch; a menu-bar app
