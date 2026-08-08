@@ -20,6 +20,7 @@
 		AB0100000000000000000018 /* TextLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000018 /* TextLayer.swift */; };
 		AB0100000000000000000019 /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000019 /* Intents.swift */; };
 		AB010000000000000000001A /* ScanNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000001A /* ScanNotifier.swift */; };
+		AB010000000000000000001B /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000001B /* Commands.swift */; };
 		AB010000000000000000000B /* ScanLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000B /* ScanLibrary.swift */; };
 		AB010000000000000000000C /* ScanToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000C /* ScanToast.swift */; };
 		AB010000000000000000000D /* ScannerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000000D /* ScannerEngine.swift */; };
@@ -72,6 +73,7 @@
 		AF0100000000000000000018 /* TextLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextLayer.swift; sourceTree = "<group>"; };
 		AF0100000000000000000019 /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
 		AF010000000000000000001A /* ScanNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanNotifier.swift; sourceTree = "<group>"; };
+		AF010000000000000000001B /* Commands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands.swift; sourceTree = "<group>"; };
 		AF010000000000000000000B /* ScanLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanLibrary.swift; sourceTree = "<group>"; };
 		AF010000000000000000000C /* ScanToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanToast.swift; sourceTree = "<group>"; };
 		AF010000000000000000000D /* ScannerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerEngine.swift; sourceTree = "<group>"; };
@@ -160,6 +162,7 @@
 				AF0100000000000000000018 /* TextLayer.swift */,
 				AF0100000000000000000019 /* Intents.swift */,
 				AF010000000000000000001A /* ScanNotifier.swift */,
+				AF010000000000000000001B /* Commands.swift */,
 				AF010000000000000000000E /* SettingsView.swift */,
 				AF0100000000000000000005 /* MenuBarPanelView.swift */,
 				AF0100000000000000000004 /* MenuBarController.swift */,
@@ -366,6 +369,7 @@
 				AB0100000000000000000018 /* TextLayer.swift in Sources */,
 				AB0100000000000000000019 /* Intents.swift in Sources */,
 				AB010000000000000000001A /* ScanNotifier.swift in Sources */,
+				AB010000000000000000001B /* Commands.swift in Sources */,
 				AB010000000000000000000E /* SettingsView.swift in Sources */,
 				AB0100000000000000000005 /* MenuBarPanelView.swift in Sources */,
 				AB0100000000000000000004 /* MenuBarController.swift in Sources */,

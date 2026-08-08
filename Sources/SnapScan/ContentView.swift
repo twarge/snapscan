@@ -83,6 +83,30 @@ struct ContentView: View {
         .sheet(item: $enlargedPage) { page in
             pagePreview(page)
         }
+        .focusedSceneValue(\.scanActions, menuActions)
+    }
+
+    /// The window's half of the File menu.
+    private var menuActions: ScanActions {
+        ScanActions(
+            scan: { Task { await engine.scan() } },
+            done: { finalizeDocument() },
+            discard: { discardScan() },
+            reveal: {
+                guard let url = selection ?? engine.documentURL else { return }
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            },
+            share: {
+                guard let url = selection ?? engine.documentURL,
+                    let anchor = NSApp.keyWindow?.contentView
+                else { return }
+                NSSharingServicePicker(items: [url])
+                    .show(relativeTo: .zero, of: anchor, preferredEdge: .minY)
+            },
+            canScan: !engine.isBusy && engine.scannerPresent,
+            canFinish: !engine.isBusy && !engine.isSaving && !engine.pages.isEmpty,
+            hasDocument: engine.current != nil,
+            target: selection ?? engine.documentURL)
     }
 
     /// First run: ask where scans should go. The selection doubles as the

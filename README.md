@@ -80,6 +80,14 @@ dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
 folder, compression, searchable text, suggested names, the hardware button
 toggle, menu-bar-only mode, and start-at-login.
 
+**Menus and keys**: File carries the scanning verbs — Scan ⌘R, Done ⌘↩,
+Discard Scan ⌘⌫, Reveal in Finder ⇧⌘R, Share, and Open Scans Folder ⇧⌘O.
+View resizes the page thumbnails with ⌘+ and ⌘−, which pinch-to-zoom
+previously did alone. Help opens the SnapScan page on twarge.com. The items
+route through the focused window, so a menu command and the matching button
+do the same thing — Done commits whatever name is typed in the field, either
+way.
+
 **Undo** (⌘Z) reverses the destructive actions: deleting pages puts them
 back where they were, discarding a scan reinstates it and takes the PDF out
 of the Trash, and a rename or a Move to Trash is moved back. It registers

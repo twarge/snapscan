@@ -83,6 +83,7 @@ struct SnapScanApp: App {
             CommandGroup(replacing: .appInfo) {
                 Button("About SnapScan") { AboutPanel.show() }
             }
+            SnapScanCommands()
         }
 
         Settings {
