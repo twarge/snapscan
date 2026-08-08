@@ -80,6 +80,16 @@ dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
 folder, compression, searchable text, suggested names, the hardware button
 toggle, menu-bar-only mode, and start-at-login.
 
+**Shortcuts, Spotlight and Siri**: *Scan a Document* runs a scan and hands
+back the finished PDF, so a shortcut can go straight on to mail or file it;
+its sides, colour mode, resolution and name are all optional and fall back
+to the settings in the app. *Get Latest Scan* returns the newest PDF without
+touching the scanner, and saved scans are available as entities to pick from
+in the Shortcuts editor. Both open the app when run — the driver talks to
+the scanner from inside this process, so there's no daemon to hand the work
+to. An intent waits for straightening, the text layer and the final save
+before returning, since the paper stops moving well before the PDF is done.
+
 **Menu bar mode** hides the Dock icon and puts a scanner icon in the menu
 bar (click it for status, a Scan button, and Quit). Scans started with the
 scanner's hardware button pop up a floating preview near the menu bar with
@@ -140,6 +150,11 @@ and uses the async Swift Vision API.
   0.25–6°) — sparse pages are deliberately left alone. (A backend-side
   deskew was tried and abandoned: its estimator tilts straight-but-sparse
   pages.)
+- `Sources/SnapScan/Intents.swift` — the Shortcuts/Spotlight/Siri surface:
+  a scan action returning the PDF, a latest-scan action, and an entity
+  query over the library. The parameter enums' `AppEnum` conformances live
+  in `Models.swift`, since `AppEnum` implies `Sendable` and that has to be
+  declared alongside the type.
 - `Sources/SnapScan/TextLayer.swift` — recognizes a page's words and draws
   them into the PDF in text rendering mode 3: searchable and selectable,
   never painted. Coordinates are normalized, so they follow the image

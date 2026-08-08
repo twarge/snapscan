@@ -359,6 +359,24 @@ final class ScannerEngine {
         NativeScanner.shared.cancelFlag.cancel()
     }
 
+    /// Waits until everything queued for the current document has finished:
+    /// straightening, the text layer, the suggested name and the final save.
+    ///
+    /// The paper stops moving well before the PDF is final, so anything that
+    /// hands the file to someone else — an intent returning it to Shortcuts —
+    /// has to wait here first. Gives up rather than hanging if work stalls.
+    func settle(timeout: Duration = .seconds(180)) async throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            let pending =
+                (current?.processingRemaining ?? 0) > 0
+                || current?.needsFinalSave == true
+                || isSaving || isNaming
+            if !pending { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     /// Abandons the scan in progress: its pages are dropped and the PDF
     /// written so far goes to the Trash, where it can still be recovered.
     func discardCurrent() {

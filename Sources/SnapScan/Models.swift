@@ -1,3 +1,4 @@
+import AppIntents
 import AppKit
 import Foundation
 
@@ -206,6 +207,33 @@ extension ScanSource: Codable {}
 extension ScanMode: Codable {}
 extension PaperSize: Codable {}
 extension PDFCompression: Codable {}
+
+// Shortcuts parameter types. AppEnum implies Sendable, and a Sendable
+// conformance has to live in the same file as the type it describes — so
+// these sit here rather than beside the intents that use them.
+extension ScanSource: AppEnum {
+    nonisolated static let typeDisplayRepresentation: TypeDisplayRepresentation = "Sides"
+
+    nonisolated static var caseDisplayRepresentations: [ScanSource: DisplayRepresentation] {
+        [
+            .duplex: "Both sides",
+            .front: "Front side",
+            .back: "Back side",
+        ]
+    }
+}
+
+extension ScanMode: AppEnum {
+    nonisolated static let typeDisplayRepresentation: TypeDisplayRepresentation = "Colour mode"
+
+    nonisolated static var caseDisplayRepresentations: [ScanMode: DisplayRepresentation] {
+        [
+            .color: "Colour",
+            .gray: "Grayscale",
+            .lineart: "Black & white",
+        ]
+    }
+}
 
 /// Resolves and caches security-scoped destination folders. Each distinct
 /// bookmark starts access once for the app's lifetime (the matching stop is
