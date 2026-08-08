@@ -12,8 +12,9 @@ struct DragRow<Content: View>: NSViewRepresentable {
     var interceptsClicks: Bool = true
     let onSelect: () -> Void
     let onMoved: (URL) -> Void
-    /// Called after the file is trashed from the context menu.
-    var onTrash: () -> Void = {}
+    /// Called after the file is trashed from the context menu, with where
+    /// it landed in the Trash so the move can be undone.
+    var onTrash: (URL?) -> Void = { _ in }
     /// Called when Rename is chosen; the row opens its inline name field.
     var onRename: () -> Void = {}
     @ViewBuilder let content: () -> Content
@@ -41,7 +42,7 @@ final class DragRowView: NSView, NSDraggingSource {
     private var interceptsClicks = true
     private var onSelect: () -> Void = {}
     private var onMoved: (URL) -> Void = { _ in }
-    fileprivate var onTrash: () -> Void = {}
+    fileprivate var onTrash: (URL?) -> Void = { _ in }
     private var onRename: () -> Void = {}
     private var mouseDownLocation: NSPoint?
     private var sharePicker: NSSharingServicePicker?
@@ -49,7 +50,7 @@ final class DragRowView: NSView, NSDraggingSource {
     func configure(
         url: URL, interceptsClicks: Bool,
         onSelect: @escaping () -> Void, onMoved: @escaping (URL) -> Void,
-        onTrash: @escaping () -> Void = {}, onRename: @escaping () -> Void = {}
+        onTrash: @escaping (URL?) -> Void = { _ in }, onRename: @escaping () -> Void = {}
     ) {
         self.url = url
         self.interceptsClicks = interceptsClicks
@@ -127,8 +128,10 @@ final class DragRowView: NSView, NSDraggingSource {
     }
 
     @objc private func moveToTrash() {
-        try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-        onTrash()
+        // The Trash location is what lets an undo put the file back.
+        var trashed: NSURL?
+        try? FileManager.default.trashItem(at: url, resultingItemURL: &trashed)
+        onTrash(trashed as URL?)
     }
 
     override func mouseUp(with event: NSEvent) {

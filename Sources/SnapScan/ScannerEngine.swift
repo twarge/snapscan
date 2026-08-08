@@ -377,16 +377,41 @@ final class ScannerEngine {
         }
     }
 
+    /// A discarded scan, kept whole so undo can bring it back.
+    struct DiscardedScan {
+        let document: ActiveDocument
+        let from: URL?
+        let inTrash: URL?
+    }
+
     /// Abandons the scan in progress: its pages are dropped and the PDF
     /// written so far goes to the Trash, where it can still be recovered.
-    func discardCurrent() {
-        guard let document = current else { return }
+    @discardableResult
+    func discardCurrent() -> DiscardedScan? {
+        guard let document = current else { return nil }
+        var trashed: NSURL?
         if let url = document.url {
-            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            try? FileManager.default.trashItem(at: url, resultingItemURL: &trashed)
         }
         current = nil
         feederWasEmpty = false
         lastError = nil
+        ScanLibrary.shared.refresh()
+        return DiscardedScan(
+            document: document, from: document.url, inTrash: trashed as URL?)
+    }
+
+    /// Reinstates a discarded scan, taking its PDF back out of the Trash.
+    func restore(_ discarded: DiscardedScan) {
+        current = discarded.document
+        if let inTrash = discarded.inTrash, let from = discarded.from,
+            (try? FileManager.default.moveItem(at: inTrash, to: from)) != nil {
+            ScanLibrary.shared.noteSaved(id: discarded.document.id, url: from)
+        } else {
+            // Emptied Trash, or a file moved since: the pages are still in
+            // memory, so write it out again.
+            Task { await save(discarded.document) }
+        }
         ScanLibrary.shared.refresh()
     }
 
@@ -534,11 +559,20 @@ final class ScannerEngine {
         deletePages(withIDs: [page.id])
     }
 
-    func deletePages(withIDs ids: Set<UUID>) {
-        guard !isBusy, let document = current else { return }
-        let countBefore = document.pages.count
+    /// What a deletion took away, so it can be put back.
+    struct PageDeletion {
+        let document: ActiveDocument
+        let entries: [(index: Int, page: ScannedPage)]
+    }
+
+    @discardableResult
+    func deletePages(withIDs ids: Set<UUID>) -> PageDeletion? {
+        guard !isBusy, let document = current else { return nil }
+        let removed = document.pages.enumerated()
+            .filter { ids.contains($0.element.id) }
+            .map { (index: $0.offset, page: $0.element) }
+        guard !removed.isEmpty else { return nil }
         document.pages.removeAll { ids.contains($0.id) }
-        guard document.pages.count != countBefore else { return }
         if document.pages.isEmpty {
             // All content removed: the document no longer has meaning.
             if let url = document.url {
@@ -549,6 +583,21 @@ final class ScannerEngine {
         } else {
             Task { await save(document) }
         }
+        return PageDeletion(document: document, entries: removed)
+    }
+
+    /// Puts deleted pages back where they were and rewrites the PDF.
+    func restore(_ deletion: PageDeletion) {
+        let document = deletion.document
+        // Ascending, so each insertion index still means what it did when the
+        // pages were taken out.
+        for entry in deletion.entries.sorted(by: { $0.index < $1.index }) {
+            document.pages.insert(entry.page, at: min(entry.index, document.pages.count))
+        }
+        // Deleting the last page retires the document; bringing a page back
+        // brings the document with it.
+        if current == nil { current = document }
+        Task { await save(document) }
     }
 
     // MARK: - Hardware button watch

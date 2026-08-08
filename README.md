@@ -80,6 +80,12 @@ dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
 folder, compression, searchable text, suggested names, the hardware button
 toggle, menu-bar-only mode, and start-at-login.
 
+**Undo** (⌘Z) reverses the destructive actions: deleting pages puts them
+back where they were, discarding a scan reinstates it and takes the PDF out
+of the Trash, and a rename or a Move to Trash is moved back. It registers
+with the window's undo manager, so a focused text field keeps its own undo
+while typing.
+
 **Shortcuts, Spotlight and Siri**: *Scan a Document* runs a scan and hands
 back the finished PDF, so a shortcut can go straight on to mail or file it;
 its sides, colour mode, resolution and name are all optional and fall back

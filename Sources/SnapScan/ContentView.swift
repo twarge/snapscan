@@ -4,6 +4,9 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Environment(ScannerEngine.self) private var engine
     @Environment(\.openWindow) private var openWindow
+    /// The window's undo manager, so ⌘Z and the Edit menu work as they do
+    /// anywhere else — and so a focused text field keeps its own undo.
+    @Environment(\.undoManager) private var undoManager
     @State private var library = ScanLibrary.shared
     /// nil = the in-progress scan session; otherwise a saved PDF to preview.
     @State private var selection: URL?
@@ -156,9 +159,15 @@ struct ContentView: View {
                         engine.documentWasMoved(url)
                         if selection == url { selection = nil }
                         library.refresh()
-                    } onTrash: {
+                    } onTrash: { trashedTo in
                         if selection == document.url { selection = nil }
                         library.refresh()
+                        guard let trashedTo else { return }
+                        registerUndo("Move to Trash") { _ in
+                            try? FileManager.default.moveItem(
+                                at: trashedTo, to: document.url)
+                            library.refresh()
+                        }
                     } onRename: {
                         // Deliberately without selecting the row: renaming
                         // shouldn't swap what the detail pane is showing, and
@@ -231,8 +240,14 @@ struct ContentView: View {
         }
         do {
             try FileManager.default.moveItem(at: document.url, to: destination)
+            let previous = document.url
             if selection == document.url { selection = destination }
             library.refresh()
+            registerUndo("Rename") { _ in
+                try? FileManager.default.moveItem(at: destination, to: previous)
+                if selection == destination { selection = previous }
+                library.refresh()
+            }
         } catch {
             engine.lastError = "Couldn't rename: \(error.localizedDescription)"
         }
@@ -284,10 +299,15 @@ struct ContentView: View {
 
     /// Throws away the scan in progress — the PDF goes to the Trash.
     private func discardScan() {
-        engine.discardCurrent()
+        let discarded = engine.discardCurrent()
         selection = nil
         selectedPages = []
         draftName = ""
+        guard let discarded else { return }
+        registerUndo("Discard Scan") { engine in
+            engine.restore(discarded)
+            selection = nil
+        }
     }
 
     /// A finalized document whose straightening/saving is still draining.
@@ -398,8 +418,22 @@ struct ContentView: View {
 
     private func deleteSelectedPages() {
         guard !selectedPages.isEmpty else { return }
-        engine.deletePages(withIDs: selectedPages)
+        let deletion = engine.deletePages(withIDs: selectedPages)
         selectedPages = []
+        guard let deletion else { return }
+        registerUndo("Delete Pages") { engine in engine.restore(deletion) }
+    }
+
+    /// Registers an inverse for a destructive action. The handler runs on the
+    /// main actor: undo arrives through the menu, which is already there.
+    private func registerUndo(
+        _ name: String, _ inverse: @escaping (ScannerEngine) -> Void
+    ) {
+        guard let undoManager else { return }
+        undoManager.setActionName(name)
+        undoManager.registerUndo(withTarget: ScannerEngine.shared) { engine in
+            MainActor.assumeIsolated { inverse(engine) }
+        }
     }
 
     private var documentHeader: some View {
