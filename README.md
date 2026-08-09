@@ -82,11 +82,16 @@ toggle, menu-bar-only mode, and start-at-login.
 
 **Menus and keys**: File carries the scanning verbs — Scan ⌘R, Done ⌘↩,
 Discard Scan ⌘⌫, Reveal in Finder ⇧⌘R, Share, and Open Scans Folder ⇧⌘O.
-View resizes the page thumbnails with ⌘+ and ⌘−, which pinch-to-zoom
-previously did alone. Help opens the SnapScan page on twarge.com. The items
-route through the focused window, so a menu command and the matching button
-do the same thing — Done commits whatever name is typed in the field, either
-way.
+Edit adds Delete Pages, Select All Pages ⇧⌘A and Rename. View resizes the
+page thumbnails with ⌘+ and ⌘−, which pinch-to-zoom previously did alone.
+Help opens the SnapScan page on twarge.com. The items route through the
+focused window, so a menu command and the matching button do the same
+thing — Done commits whatever name is typed in the field, either way.
+
+Delete Pages and Rename deliberately carry no keyboard shortcut: a menu
+shortcut is matched before the key window sees the event, so a bare Delete
+or Return there would swallow those keys while a name is being typed. The
+page grid keeps its own Delete and the sidebar its click-pause-click.
 
 **Undo** (⌘Z) reverses the destructive actions: deleting pages puts them
 back where they were, discarding a scan reinstates it and takes the PDF out
@@ -105,7 +110,9 @@ to. An intent waits for straightening, the text layer and the final save
 before returning, since the paper stops moving well before the PDF is done.
 
 **Menu bar mode** hides the Dock icon and puts a scanner icon in the menu
-bar (click it for status, a Scan button, and Quit). Scans started with the
+bar. Its panel is the whole app in that mode, so besides status and a Scan
+button it carries Recent Scans (the last five, each opening or revealing),
+sides and colour pickers, and Scan To for the destination folder. Scans started with the
 scanner's hardware button pop up a floating preview near the menu bar with
 the latest page and — in combine mode — a Done button. Start-at-login uses
 the system login items (the app should live in /Applications for that).

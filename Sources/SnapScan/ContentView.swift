@@ -103,10 +103,32 @@ struct ContentView: View {
                 NSSharingServicePicker(items: [url])
                     .show(relativeTo: .zero, of: anchor, preferredEdge: .minY)
             },
+            deletePages: { deleteSelectedPages() },
+            selectAllPages: { selectedPages = Set(engine.pages.map(\.id)) },
+            rename: { beginRenameFromMenu() },
             canScan: !engine.isBusy && engine.scannerPresent,
             canFinish: !engine.isBusy && !engine.isSaving && !engine.pages.isEmpty,
             hasDocument: engine.current != nil,
+            canDeletePages: !selectedPages.isEmpty && !engine.isBusy,
+            hasPages: !engine.pages.isEmpty,
+            canRename: selection != nil || engine.current != nil,
             target: selection ?? engine.documentURL)
+    }
+
+    /// Rename whatever the window is showing: the selected saved scan opens
+    /// its inline field, and the scan being built puts the caret in the name
+    /// field above the pages.
+    private func beginRenameFromMenu() {
+        if let selection,
+            let document = library.documents.first(where: { $0.url == selection }) {
+            renamePendingID = nil
+            beginRename(document)
+        } else if engine.current != nil {
+            nameFieldFocused = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+            }
+        }
     }
 
     /// First run: ask where scans should go. The selection doubles as the

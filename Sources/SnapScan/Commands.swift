@@ -14,9 +14,15 @@ struct ScanActions {
     var discard: () -> Void
     var reveal: () -> Void
     var share: () -> Void
+    var deletePages: () -> Void
+    var selectAllPages: () -> Void
+    var rename: () -> Void
     var canScan: Bool
     var canFinish: Bool
     var hasDocument: Bool
+    var canDeletePages: Bool
+    var hasPages: Bool
+    var canRename: Bool
     /// The file Reveal and Share would act on: the selected scan, or the one
     /// being built. nil disables both.
     var target: URL?
@@ -57,6 +63,21 @@ struct SnapScanCommands: Commands {
                 NSWorkspace.shared.open(ScannerEngine.shared.settings.destinationURL)
             }
             .keyboardShortcut("o", modifiers: [.command, .shift])
+        }
+        CommandGroup(after: .pasteboard) {
+            Divider()
+            // No key equivalents on these two on purpose. A menu shortcut is
+            // matched before the key window sees the event, so a bare Delete
+            // or Return here would swallow those keys while someone is typing
+            // in the name field. The page grid keeps its own Delete, and the
+            // sidebar its click-pause-click.
+            Button("Delete Pages") { actions?.deletePages() }
+                .disabled(actions?.canDeletePages != true)
+            Button("Select All Pages") { actions?.selectAllPages() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(actions?.hasPages != true)
+            Button("Rename…") { actions?.rename() }
+                .disabled(actions?.canRename != true)
         }
         CommandGroup(after: .toolbar) {
             // Pinch-to-zoom was the only way to reach this, which leaves out
