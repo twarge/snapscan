@@ -211,7 +211,14 @@ extension PDFCompression: Codable {}
 // Shortcuts parameter types. AppEnum implies Sendable, and a Sendable
 // conformance has to live in the same file as the type it describes — so
 // these sit here rather than beside the intents that use them.
-extension ScanSource: AppEnum {
+//
+// `nonisolated` on the extension is load-bearing: this target defaults to
+// main-actor isolation, which would otherwise make these *conformances*
+// main-actor-isolated, and App Intents reads parameter values off the main
+// actor. Without it the build fails on Xcode 26 with "main actor-isolated
+// conformance ... cannot satisfy conformance requirement for a 'Sendable'
+// type parameter".
+nonisolated extension ScanSource: AppEnum {
     nonisolated static let typeDisplayRepresentation: TypeDisplayRepresentation = "Sides"
 
     nonisolated static var caseDisplayRepresentations: [ScanSource: DisplayRepresentation] {
@@ -223,7 +230,7 @@ extension ScanSource: AppEnum {
     }
 }
 
-extension ScanMode: AppEnum {
+nonisolated extension ScanMode: AppEnum {
     nonisolated static let typeDisplayRepresentation: TypeDisplayRepresentation = "Colour mode"
 
     nonisolated static var caseDisplayRepresentations: [ScanMode: DisplayRepresentation] {
