@@ -747,7 +747,7 @@ struct ContentView: View {
         }
         .help(
             !engine.scannerPresent
-                ? "Scanner not connected — plug in the iX500 and open its feeder flap"
+                ? "Scanner not connected — plug in the scanner and open its feeder flap"
                 : engine.status == .detecting
                     ? "Looking for scanner…"
                     : (engine.scannerName ?? "Scanner ready"))

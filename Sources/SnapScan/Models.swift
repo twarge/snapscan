@@ -43,7 +43,7 @@ nonisolated enum PaperSize: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Scan-area width and height in millimeters. Values are clamped to the
-    /// iX500's maximum scan width (215.872 mm). Auto acquires oversized —
+    /// scanner's maximum scan width (215.872 mm). Auto acquires oversized —
     /// full width, generous length — and relies on hardware length detection
     /// plus content-bounds cropping to find the real page.
     var millimeters: (width: Double, height: Double) {

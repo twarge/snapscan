@@ -4,7 +4,7 @@ import IOKit.usb
 
 /// Watches for a specific USB device appearing/disappearing using IOKit
 /// matching notifications — event-driven, so presence updates the moment the
-/// scanner is plugged in or powers up (the iX500 powers off USB when its
+/// scanner is plugged in or powers up (the scanner powers off USB when its
 /// flap closes), with no polling.
 nonisolated final class USBWatcher {
     private let notifyPort: IONotificationPortRef

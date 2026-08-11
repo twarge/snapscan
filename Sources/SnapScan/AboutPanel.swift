@@ -32,17 +32,8 @@ enum AboutPanel {
         let text = NSMutableAttributedString()
         text.append(
             NSAttributedString(
-                string: "Scans documents with a Fujitsu ScanSnap iX500.\n\n",
+                string: "Scans paper documents over USB and saves them as PDFs.\n\n",
                 attributes: body))
-        // Sits directly under the only place the app names the hardware, so
-        // the two are read together.
-        text.append(
-            NSAttributedString(
-                string: """
-                    SnapScan is an independent product and is not affiliated with, \
-                    endorsed by, or sponsored by Fujitsu, PFU, or Ricoh.\n\n
-                    """,
-                attributes: secondary))
         text.append(
             NSAttributedString(
                 string: """

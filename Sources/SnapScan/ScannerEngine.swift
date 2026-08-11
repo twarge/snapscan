@@ -16,7 +16,7 @@ final class ScannerEngine {
 
     var status: Status = .idle
     var scannerName: String?
-    /// Live USB presence of the iX500 (event-driven via IOKit; the scanner
+    /// Live USB presence of the scanner (event-driven via IOKit; the scanner
     /// powers its USB interface off when the feeder flap is closed).
     var scannerPresent = false
     var lastError: String?
@@ -70,8 +70,8 @@ final class ScannerEngine {
     private var usbWatcher: USBWatcher?
     private let sessionDirectory: URL
 
-    private static let ix500VendorID = 0x04C5
-    private static let ix500ProductID = 0x132B
+    private static let scannerVendorID = 0x04C5
+    private static let scannerProductID = 0x132B
 
     init() {
         sessionDirectory = FileManager.default.temporaryDirectory
@@ -82,7 +82,7 @@ final class ScannerEngine {
         configureButtonWatch()
 
         usbWatcher = USBWatcher(
-            vendorID: Self.ix500VendorID, productID: Self.ix500ProductID
+            vendorID: Self.scannerVendorID, productID: Self.scannerProductID
         ) { [weak self] present in
             Task { @MainActor in self?.scannerPresenceChanged(present) }
         }
@@ -170,6 +170,9 @@ final class ScannerEngine {
 
         do {
             let device = try await NativeScanner.shared.open()
+            // Whatever the attached device reports about itself over USB. It
+            // is read at runtime from the user's own hardware, not embedded
+            // here, and appears only once that hardware is plugged in.
             deviceID = "\(device.vendor) \(device.model)"
             scannerName = deviceID
         } catch {

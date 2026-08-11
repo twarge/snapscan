@@ -1,20 +1,20 @@
 # SnapScan
 
-A small macOS app that scans documents with a Fujitsu ScanSnap iX500 and saves
-them as multi-page PDFs.
+A small macOS app that scans paper documents over USB and saves them as
+multi-page PDFs.
 
-ScanSnap scanners don't speak TWAIN or Apple's Image Capture protocol, so
-SnapScan talks to the iX500 **directly over USB** with its own driver:
-SCSI-2 scanner commands in Fujitsu's USB framing, spoken through
-IOUSBLib. There are **no third-party components** — no SANE, no libusb,
-no drivers or ScanSnap Home to install. The protocol was derived from USB
+The supported scanner (USB `0x04C5:0x132B`) doesn't speak TWAIN or Apple's
+Image Capture protocol, so SnapScan talks to it **directly over USB** with
+its own driver: SCSI-2 scanner commands in the device's USB framing, spoken
+through IOUSBLib. There are **no third-party components** — no SANE, no
+libusb, no vendor software to install. The protocol was derived from USB
 captures of the scanner itself; see [docs/PROTOCOL.md](docs/PROTOCOL.md)
 for the specification and [docs/CLEANROOM-STUDY.md](docs/CLEANROOM-STUDY.md)
 for how and why it was written.
 
 ## Using it
 
-1. Connect the iX500 via USB and open the feeder flap (that powers it on).
+1. Connect the scanner via USB and open the feeder flap (that powers it on).
 2. Launch SnapScan (copy it to /Applications if you like — the bundle is
    self-contained).
 3. Load paper, then press **Scan** in the app — or the **hardware Scan
@@ -33,7 +33,7 @@ Drag a scan into Finder to **move** it there (hold Option to copy instead).
 In the page grid: pinch to zoom the thumbnails, click to select pages
 (⌘-click for multiple), and press delete to remove them. The toolbar shows
 live scanner presence — driven by IOKit USB events, so it flips the moment
-the iX500 is plugged in or its flap opens — and the Scan button enables
+the scanner is plugged in or its flap opens — and the Scan button enables
 accordingly.
 
 With "Combine scans into one document" on (the default), scanning again
@@ -215,8 +215,8 @@ KIND. SnapScan bundles no third-party code.
 
 ## Limitations
 
-- USB only — the iX500's Wi-Fi mode uses a proprietary protocol this
+- USB only — the scanner's wireless mode uses a proprietary protocol this
   driver doesn't speak.
-- One scanner: the app uses the first iX500 it finds on USB.
-- The driver targets the iX500 specifically (USB 0x04C5:0x132B). Other
-  ScanSnap models speak a similar dialect but are untested.
+- One scanner: the app uses the first supported device it finds on USB.
+- The driver targets one model specifically (USB `0x04C5:0x132B`). Related
+  models speak a similar dialect but are untested.
