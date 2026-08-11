@@ -182,9 +182,12 @@ nonisolated final class USBTransport {
     private static func findInterfaceService(
         vendorID: Int, preferredProductID: Int?
     ) -> (service: io_service_t, productID: Int)? {
-        guard let matching = IOServiceMatching("IOUSBHostDevice") as NSMutableDictionary?
-        else { return nil }
-        matching["idVendor"] = vendorID
+        // Deliberately unfiltered. IOUSBHostDevice honours only particular
+        // *combinations* of matching properties, and vendor on its own is not
+        // one of them: a dictionary carrying just idVendor matches nothing at
+        // all, even with the device sitting on the bus. So enumerate USB and
+        // pick the vendor out here.
+        guard let matching = IOServiceMatching("IOUSBHostDevice") else { return nil }
 
         var deviceIterator: io_iterator_t = 0
         guard
@@ -196,6 +199,7 @@ nonisolated final class USBTransport {
         var fallback: (service: io_service_t, productID: Int)?
         while case let device = IOIteratorNext(deviceIterator), device != 0 {
             defer { IOObjectRelease(device) }
+            guard numberProperty(device, "idVendor") == vendorID else { continue }
             guard let interface = firstInterface(of: device) else { continue }
             let productID = numberProperty(device, "idProduct") ?? 0
             if productID == preferredProductID {

@@ -13,53 +13,55 @@ nonisolated final class USBWatcher {
     fileprivate let onChange: (Bool) -> Void
     private(set) var present = false
 
+    private let vendorID: Int
+    private let productID: Int?
+
     init?(vendorID: Int, productID: Int?, onChange: @escaping (Bool) -> Void) {
         guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return nil }
         notifyPort = port
+        self.vendorID = vendorID
+        self.productID = productID
         self.onChange = onChange
         IONotificationPortSetDispatchQueue(port, .main)
 
+        // Every USB device, not a filtered set: IOUSBHostDevice matching only
+        // honours certain property combinations, and vendor alone isn't one —
+        // a dictionary filtered that way never fires. So take every USB
+        // arrival and departure as a hint, and ask who is really attached.
         func matchingDictionary() -> CFMutableDictionary? {
-            guard let dict = IOServiceMatching("IOUSBHostDevice") else { return nil }
-            let mutable = dict as NSMutableDictionary
-            mutable["idVendor"] = vendorID
-            // nil watches the whole vendor: any model of theirs is worth
-            // waking up for, and INQUIRY decides if it is really a scanner.
-            if let productID { mutable["idProduct"] = productID }
-            return mutable as CFMutableDictionary
+            IOServiceMatching("IOUSBHostDevice")
         }
 
         let context = Unmanaged.passUnretained(self).toOpaque()
+        let notify: IOServiceMatchingCallback = { context, iterator in
+            guard let context else { return }
+            let watcher = Unmanaged<USBWatcher>.fromOpaque(context).takeUnretainedValue()
+            // Draining is what re-arms the notification.
+            watcher.drain(iterator)
+            watcher.setPresent(watcher.scannerAttached())
+        }
 
         let matchedResult = IOServiceAddMatchingNotification(
             port, kIOFirstMatchNotification, matchingDictionary(),
-            { context, iterator in
-                guard let context else { return }
-                let watcher = Unmanaged<USBWatcher>.fromOpaque(context).takeUnretainedValue()
-                watcher.drain(iterator)
-                watcher.setPresent(true)
-            },
-            context, &matchedIterator)
-
+            notify, context, &matchedIterator)
         let terminatedResult = IOServiceAddMatchingNotification(
             port, kIOTerminatedNotification, matchingDictionary(),
-            { context, iterator in
-                guard let context else { return }
-                let watcher = Unmanaged<USBWatcher>.fromOpaque(context).takeUnretainedValue()
-                watcher.drain(iterator)
-                watcher.setPresent(false)
-            },
-            context, &terminatedIterator)
+            notify, context, &terminatedIterator)
 
         guard matchedResult == KERN_SUCCESS, terminatedResult == KERN_SUCCESS else {
             IONotificationPortDestroy(port)
             return nil
         }
 
-        // Draining the iterators arms the notifications; the first-match
-        // iterator also reveals whether the device is already connected.
-        present = drainCounting(matchedIterator) > 0
+        // Draining the iterators arms the notifications.
+        drain(matchedIterator)
         drain(terminatedIterator)
+        present = scannerAttached()
+    }
+
+    /// Whether a device from the watched vendor is on the bus right now.
+    private func scannerAttached() -> Bool {
+        USBTransport.present(vendorID: vendorID, preferredProductID: productID) != nil
     }
 
     deinit {
