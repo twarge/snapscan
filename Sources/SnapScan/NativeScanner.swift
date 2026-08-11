@@ -10,11 +10,23 @@ actor NativeScanner {
     static let shared = NativeScanner()
 
     static let vendorID = 0x04C5
-    static let productID = 0x132B
+    /// The one model this driver has actually been exercised against on real
+    /// hardware. Others from the same vendor are attempted on the assumption
+    /// that the family shares this protocol — see `DeviceInfo.isVerified`.
+    static let verifiedProductID = 0x132B
+    /// SCSI peripheral device type 6: a scanner. Matching on vendor alone
+    /// means anything that vendor makes can turn up, so this is what stops a
+    /// printer or a hub from being driven as one.
+    private static let scannerDeviceType: UInt8 = 6
 
     struct DeviceInfo: Sendable {
         let vendor: String
         let model: String
+        let productID: Int
+        /// False for a model this driver has never been tested against. It
+        /// answered the protocol, so scanning is attempted, but nothing about
+        /// how well it works is known.
+        var isVerified: Bool { productID == NativeScanner.verifiedProductID }
     }
 
     enum BatchEvent: Sendable {
@@ -30,12 +42,15 @@ actor NativeScanner {
 
     enum ScanError: Error, LocalizedError {
         case notOpen
+        case notAScanner
         case unexpectedStatus(String)
         case scannerError(key: UInt8, asc: UInt8, ascq: UInt8)
 
         var errorDescription: String? {
             switch self {
             case .notOpen: "No scanner connection"
+            case .notAScanner:
+                "That USB device isn't a scanner this app can drive"
             case .unexpectedStatus(let detail): detail
             case .scannerError(let key, let asc, let ascq):
                 Self.describe(key: key, asc: asc, ascq: ascq)
@@ -92,12 +107,13 @@ actor NativeScanner {
     // MARK: - Connection
 
     nonisolated static func isPresent() -> Bool {
-        USBTransport.isPresent(vendorID: vendorID, productID: productID)
+        USBTransport.present(vendorID: vendorID, preferredProductID: verifiedProductID) != nil
     }
 
     func open() throws -> DeviceInfo {
         if transport == nil {
-            transport = try USBTransport(vendorID: Self.vendorID, productID: Self.productID)
+            transport = try USBTransport(
+                vendorID: Self.vendorID, preferredProductID: Self.verifiedProductID)
         }
         guard let transport else { throw ScanError.notOpen }
 
@@ -106,7 +122,14 @@ actor NativeScanner {
         guard let identity = ScannerCommands.parseInquiry(data) else {
             throw ScanError.unexpectedStatus("INQUIRY returned unusable data")
         }
-        return DeviceInfo(vendor: identity.vendor, model: identity.model)
+        guard identity.deviceType == Self.scannerDeviceType else {
+            // Not a scanner: let go of it rather than sending scan commands
+            // to whatever it actually is.
+            self.transport = nil
+            throw ScanError.notAScanner
+        }
+        return DeviceInfo(
+            vendor: identity.vendor, model: identity.model, productID: transport.productID)
     }
 
     func close() {

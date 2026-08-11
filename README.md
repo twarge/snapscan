@@ -217,6 +217,11 @@ KIND. SnapScan bundles no third-party code.
 
 - USB only — the scanner's wireless mode uses a proprietary protocol this
   driver doesn't speak.
-- One scanner: the app uses the first supported device it finds on USB.
-- The driver targets one model specifically (USB `0x04C5:0x132B`). Related
-  models speak a similar dialect but are untested.
+- One scanner: the app uses the first supported device it finds on USB,
+  preferring the verified model when several are attached.
+- Only USB `0x04C5:0x132B` has been tested on real hardware. Any scanner
+  from the same vendor is now attempted on the assumption that the family
+  shares this protocol: the app matches on vendor, then asks the device
+  what it is, and drives it only if SCSI INQUIRY reports a scanner. An
+  untested model is labelled as such next to its name — it may work
+  completely, partly, or not at all.

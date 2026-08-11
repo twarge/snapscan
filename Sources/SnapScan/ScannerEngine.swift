@@ -19,6 +19,10 @@ final class ScannerEngine {
     /// Live USB presence of the scanner (event-driven via IOKit; the scanner
     /// powers its USB interface off when the feeder flap is closed).
     var scannerPresent = false
+    /// The attached scanner is a model this driver has never been tested
+    /// against — it answered the protocol, so it is being driven on the
+    /// assumption that the family shares it.
+    var isProvisionalScanner = false
     var lastError: String?
     var feederWasEmpty = false
     /// True while a PDF is being written. The write runs off the main
@@ -71,7 +75,6 @@ final class ScannerEngine {
     private let sessionDirectory: URL
 
     private static let scannerVendorID = 0x04C5
-    private static let scannerProductID = 0x132B
 
     init() {
         sessionDirectory = FileManager.default.temporaryDirectory
@@ -82,7 +85,7 @@ final class ScannerEngine {
         configureButtonWatch()
 
         usbWatcher = USBWatcher(
-            vendorID: Self.scannerVendorID, productID: Self.scannerProductID
+            vendorID: Self.scannerVendorID, productID: nil
         ) { [weak self] present in
             Task { @MainActor in self?.scannerPresenceChanged(present) }
         }
@@ -173,11 +176,17 @@ final class ScannerEngine {
             // Whatever the attached device reports about itself over USB. It
             // is read at runtime from the user's own hardware, not embedded
             // here, and appears only once that hardware is plugged in.
-            deviceID = "\(device.vendor) \(device.model)"
-            scannerName = deviceID
+            let identity = "\(device.vendor) \(device.model)"
+            deviceID = identity
+            // A model this driver has never met is driven anyway, on the
+            // assumption that the family shares one protocol. Say so, rather
+            // than letting a guess look like a supported configuration.
+            isProvisionalScanner = !device.isVerified
+            scannerName = device.isVerified ? identity : "\(identity) — untested"
         } catch {
             deviceID = nil
             scannerName = nil
+            isProvisionalScanner = false
             lastError = error.localizedDescription
         }
     }

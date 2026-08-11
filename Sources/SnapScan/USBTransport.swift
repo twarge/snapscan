@@ -75,9 +75,16 @@ nonisolated final class USBTransport {
 
     // MARK: - Discovery
 
-    init(vendorID: Int, productID: Int) throws {
-        guard let service = Self.findInterfaceService(vendorID: vendorID, productID: productID)
+    /// The product ID of the device this transport opened.
+    private(set) var productID = 0
+
+    init(vendorID: Int, preferredProductID: Int?) throws {
+        guard
+            let found = Self.findInterfaceService(
+                vendorID: vendorID, preferredProductID: preferredProductID)
         else { throw TransportError.deviceNotFound }
+        let service = found.service
+        productID = found.productID
         defer { IOObjectRelease(service) }
 
         // IOUSBLib is a CFPlugIn: get the plug-in, then query it for the
@@ -161,14 +168,23 @@ nonisolated final class USBTransport {
         guard inPipe != 0 else { throw TransportError.pipeNotFound(Self.bulkInAddress) }
     }
 
-    /// Finds the scanner's USB interface service. Only device services are
-    /// matchable by vendor/product, so match the device and walk to its
-    /// interface child.
-    private static func findInterfaceService(vendorID: Int, productID: Int) -> io_service_t? {
+    /// Finds a candidate scanner interface from this vendor, along with the
+    /// product ID of the device it belongs to.
+    ///
+    /// Matching is on vendor alone: the family speaks one protocol, so a
+    /// model this driver has never seen is worth trying rather than refusing.
+    /// `preferredProductID` wins when several devices are attached, so the
+    /// known-good one is never passed over for an untried sibling. Whether a
+    /// candidate is really a scanner is settled by INQUIRY, not here.
+    ///
+    /// Only device services are matchable by vendor/product, so match the
+    /// device and walk to its interface child.
+    private static func findInterfaceService(
+        vendorID: Int, preferredProductID: Int?
+    ) -> (service: io_service_t, productID: Int)? {
         guard let matching = IOServiceMatching("IOUSBHostDevice") as NSMutableDictionary?
         else { return nil }
         matching["idVendor"] = vendorID
-        matching["idProduct"] = productID
 
         var deviceIterator: io_iterator_t = 0
         guard
@@ -177,30 +193,57 @@ nonisolated final class USBTransport {
         else { return nil }
         defer { IOObjectRelease(deviceIterator) }
 
+        var fallback: (service: io_service_t, productID: Int)?
         while case let device = IOIteratorNext(deviceIterator), device != 0 {
             defer { IOObjectRelease(device) }
-            var childIterator: io_iterator_t = 0
-            guard
-                IORegistryEntryGetChildIterator(device, kIOServicePlane, &childIterator)
-                    == KERN_SUCCESS
-            else { continue }
-            defer { IOObjectRelease(childIterator) }
-
-            while case let child = IOIteratorNext(childIterator), child != 0 {
-                if IOObjectConformsTo(child, "IOUSBHostInterface") != 0 {
-                    return child  // caller releases
-                }
-                IOObjectRelease(child)
+            guard let interface = firstInterface(of: device) else { continue }
+            let productID = numberProperty(device, "idProduct") ?? 0
+            if productID == preferredProductID {
+                if let fallback { IOObjectRelease(fallback.service) }
+                return (interface, productID)  // caller releases
             }
+            if fallback == nil {
+                fallback = (interface, productID)
+            } else {
+                IOObjectRelease(interface)
+            }
+        }
+        return fallback
+    }
+
+    private static func firstInterface(of device: io_service_t) -> io_service_t? {
+        var childIterator: io_iterator_t = 0
+        guard
+            IORegistryEntryGetChildIterator(device, kIOServicePlane, &childIterator)
+                == KERN_SUCCESS
+        else { return nil }
+        defer { IOObjectRelease(childIterator) }
+
+        while case let child = IOIteratorNext(childIterator), child != 0 {
+            if IOObjectConformsTo(child, "IOUSBHostInterface") != 0 {
+                return child
+            }
+            IOObjectRelease(child)
         }
         return nil
     }
 
-    static func isPresent(vendorID: Int, productID: Int) -> Bool {
-        guard let service = findInterfaceService(vendorID: vendorID, productID: productID)
-        else { return false }
-        IOObjectRelease(service)
-        return true
+    private static func numberProperty(_ service: io_service_t, _ key: String) -> Int? {
+        guard
+            let value = IORegistryEntryCreateCFProperty(
+                service, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue()
+        else { return nil }
+        return (value as? NSNumber)?.intValue
+    }
+
+    /// The product ID of an attached candidate, or nil if there is none.
+    static func present(vendorID: Int, preferredProductID: Int?) -> Int? {
+        guard
+            let found = findInterfaceService(
+                vendorID: vendorID, preferredProductID: preferredProductID)
+        else { return nil }
+        IOObjectRelease(found.service)
+        return found.productID
     }
 
     // MARK: - Framing

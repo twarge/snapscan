@@ -13,7 +13,7 @@ nonisolated final class USBWatcher {
     fileprivate let onChange: (Bool) -> Void
     private(set) var present = false
 
-    init?(vendorID: Int, productID: Int, onChange: @escaping (Bool) -> Void) {
+    init?(vendorID: Int, productID: Int?, onChange: @escaping (Bool) -> Void) {
         guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return nil }
         notifyPort = port
         self.onChange = onChange
@@ -23,7 +23,9 @@ nonisolated final class USBWatcher {
             guard let dict = IOServiceMatching("IOUSBHostDevice") else { return nil }
             let mutable = dict as NSMutableDictionary
             mutable["idVendor"] = vendorID
-            mutable["idProduct"] = productID
+            // nil watches the whole vendor: any model of theirs is worth
+            // waking up for, and INQUIRY decides if it is really a scanner.
+            if let productID { mutable["idProduct"] = productID }
             return mutable as CFMutableDictionary
         }
 
