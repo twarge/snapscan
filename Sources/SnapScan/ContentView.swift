@@ -109,10 +109,23 @@ struct ContentView: View {
             canScan: !engine.isBusy && engine.scannerPresent,
             canFinish: !engine.isBusy && !engine.isSaving && !engine.pages.isEmpty,
             hasDocument: engine.current != nil,
-            canDeletePages: !selectedPages.isEmpty && !engine.isBusy,
+            canDeletePages: canDeletePages,
             hasPages: !engine.pages.isEmpty,
             canRename: selection != nil || engine.current != nil,
             target: selection ?? engine.documentURL)
+    }
+
+    /// The page grid is what the keyboard is pointed at: it's on screen, and
+    /// no text field or sheet has the keys. The grid's ⌫, ⌦ and ⎋ are caught
+    /// before any view sees them, so they must stand aside whenever typing
+    /// would otherwise lose the key.
+    private var pageGridHasKeys: Bool {
+        selection == nil && enlargedPage == nil && !nameFieldFocused
+            && !renameFieldFocused
+    }
+
+    private var canDeletePages: Bool {
+        !selectedPages.isEmpty && !engine.isBusy && pageGridHasKeys
     }
 
     /// Rename whatever the window is showing: the selected saved scan opens
@@ -451,12 +464,13 @@ struct ContentView: View {
             .focusable()
             .focusEffectDisabled()
             .focused($gridFocused)
-            .onDeleteCommand { deleteSelectedPages() }
-            .onKeyPress(.deleteForward) {
-                deleteSelectedPages()
-                return .handled
+            .background {
+                PageGridKeys(
+                    canDelete: canDeletePages,
+                    canDeselect: !selectedPages.isEmpty && pageGridHasKeys,
+                    delete: { deleteSelectedPages() },
+                    deselect: { selectedPages = [] })
             }
-            .onExitCommand { selectedPages = [] }
             .safeAreaInset(edge: .top) { documentHeader }
             .safeAreaInset(edge: .bottom) { bottomBar }
         }
@@ -752,4 +766,58 @@ struct ContentView: View {
                     ? "Looking for scanner…"
                     : (engine.scannerName ?? "Scanner ready"))
     }
+}
+
+/// ⌦ and ⎋ for the page grid. The Edit menu answers ⌫ for it, since SwiftUI
+/// won't keep the grid focused long enough to hear keys itself — but a menu
+/// item only takes one key, and a bare ⎋ never reaches the menu, so this
+/// listens for those two in the window instead.
+private struct PageGridKeys: NSViewRepresentable {
+    var canDelete: Bool
+    var canDeselect: Bool
+    var delete: () -> Void
+    var deselect: () -> Void
+
+    func makeNSView(context: Context) -> PageGridKeysView {
+        let view = PageGridKeysView()
+        updateNSView(view, context: context)
+        return view
+    }
+
+    func updateNSView(_ view: PageGridKeysView, context: Context) {
+        view.keys = self
+    }
+}
+
+private final class PageGridKeysView: NSView {
+    var keys: PageGridKeys?
+    private var monitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        guard window != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let handled = MainActor.assumeIsolated { self?.handle(event) ?? false }
+            return handled ? nil : event
+        }
+    }
+
+    private func handle(_ event: NSEvent) -> Bool {
+        guard let keys, event.window === window,
+            event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift])
+        else { return false }
+        if event.specialKey == .deleteForward, keys.canDelete {
+            keys.delete()
+        } else if event.charactersIgnoringModifiers == "\u{1b}", keys.canDeselect {
+            keys.deselect()
+        } else {
+            return false
+        }
+        return true
+    }
+
+    // Only here to listen; clicks belong to the grid.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

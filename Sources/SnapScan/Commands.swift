@@ -20,6 +20,8 @@ struct ScanActions {
     var canScan: Bool
     var canFinish: Bool
     var hasDocument: Bool
+    /// Also false while a text field is being edited: Delete Pages answers a
+    /// bare ⌫, and would otherwise take the key from it.
     var canDeletePages: Bool
     var hasPages: Bool
     var canRename: Bool
@@ -66,12 +68,17 @@ struct SnapScanCommands: Commands {
         }
         CommandGroup(after: .pasteboard) {
             Divider()
-            // No key equivalents on these two on purpose. A menu shortcut is
-            // matched before the key window sees the event, so a bare Delete
-            // or Return here would swallow those keys while someone is typing
-            // in the name field. The page grid keeps its own Delete, and the
-            // sidebar its click-pause-click.
+            // A menu shortcut is matched before the key window sees the
+            // event, so a bare ⌫ or Return here would swallow those keys
+            // while someone is typing in the name field. Delete Pages takes ⌫
+            // anyway — the page grid can't catch it itself, because SwiftUI
+            // drops the grid's focus as soon as a click on a page lands — and
+            // the window disables it whenever a text field has the keys. The
+            // window listens for ⌦ and ⎋ itself: a menu item takes only one
+            // key, and a bare ⎋ never reaches the menu. Rename gets no
+            // Return; the sidebar has its click-pause-click.
             Button("Delete Pages") { actions?.deletePages() }
+                .keyboardShortcut(.delete, modifiers: [])
                 .disabled(actions?.canDeletePages != true)
             Button("Select All Pages") { actions?.selectAllPages() }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
