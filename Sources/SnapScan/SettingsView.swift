@@ -33,10 +33,15 @@ struct SettingsView: View {
             }
             Section("Cleanup") {
                 Toggle("Straighten pages", isOn: $engine.settings.deskew)
-                Toggle("Crop to content", isOn: $engine.settings.autocrop)
-                    // Auto crops to the sheet whatever this says.
-                    .disabled(engine.settings.paperSize == .auto)
-                    .help("Crops each page to the sheet, for paper smaller than the size chosen. Paper ▸ Auto always does.")
+                // Auto always crops to the sheet, so under Auto it shows on.
+                Toggle(
+                    "Crop to sheet",
+                    isOn: Binding(
+                        get: { engine.settings.autocrop || engine.settings.paperSize == .auto },
+                        set: { engine.settings.autocrop = $0 })
+                )
+                .disabled(engine.settings.paperSize == .auto)
+                .help("Crops each page to the sheet, for paper smaller than the size chosen. Paper ▸ Auto always does.")
                 Toggle("Skip blank pages", isOn: $engine.settings.skipBlankPages)
                 Toggle("Auto-rotate pages upright", isOn: $engine.settings.autoRotate)
             }

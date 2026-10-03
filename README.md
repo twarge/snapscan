@@ -59,7 +59,7 @@ and snaps to a standard size (Letter, A4, Legal, A5, photo sizes, …) when
 within ~5 mm per axis — receipts and other odd sizes keep their exact
 measured dimensions. Snapped pages are centered on the standard-size PDF
 page; the page cell shows what was decided. With a fixed paper size,
-Cleanup ▸ Crop to content crops each page to the sheet the same way, without
+Cleanup ▸ Crop to sheet crops each page to the sheet the same way, without
 snapping, for paper smaller than the size chosen. The sheet is found against
 the scanner's light gray backing, side by side: a side is cut only where it
 shows plain backing, and only when two sides agree on it, so a page that
@@ -102,10 +102,14 @@ documents: photographs come out as hard-edged shapes.
 **Sides**: both sides, the front, or the back. The back alone is scanned in
 the same single pass as duplex, with the fronts dropped.
 
-All settings live in SnapScan ▸ Settings (⌘,): sides, color mode, 150–600
-dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
-folder, compression, searchable text, suggested names, the hardware button
-toggle, menu-bar-only mode, and start-at-login.
+The settings that change from one stack of paper to the next are in the
+window's toolbar: paper size, sides, color, resolution, and toggles for
+cropping to the sheet, skipping blank pages and combining scans into one
+PDF. They're fixed while a scan runs. Everything lives in SnapScan ▸
+Settings (⌘,) as well: sides, color mode, 150–600 dpi, paper size, deskew,
+crop to sheet, blank-page skip, auto-rotate, the scans folder, compression,
+searchable text, suggested names, the hardware button toggle,
+menu-bar-only mode, and start-at-login.
 
 **Menus and keys**: File carries the scanning verbs — Scan ⌘R, Done ⌘↩,
 Discard Scan ⌘⌫, Reveal in Finder ⇧⌘R, Share, and Open Scans Folder ⇧⌘O.
