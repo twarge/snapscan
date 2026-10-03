@@ -32,6 +32,7 @@
 		AB0900000000000000000001 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = AF0400000000000000000002 /* AppIcon.icns */; };
 		AB0900000000000000000002 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = AF0900000000000000000001 /* LICENSE */; };
 		AB0200000000000000000007 /* PageGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000007 /* PageGeometryTests.swift */; };
+		AB020000000000000000000A /* SheetReadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF020000000000000000000A /* SheetReadTests.swift */; };
 		AB0200000000000000000006 /* FrameImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000006 /* FrameImageTests.swift */; };
 		AB0100000000000000000014 /* USBTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000014 /* USBTransport.swift */; };
 		AB0100000000000000000015 /* ScannerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000015 /* ScannerCommands.swift */; };
@@ -83,6 +84,7 @@
 		AF0100000000000000000012 /* FrameImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameImage.swift; sourceTree = "<group>"; };
 		AF0100000000000000000013 /* PageGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageGeometry.swift; sourceTree = "<group>"; };
 		AF0200000000000000000007 /* PageGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageGeometryTests.swift; sourceTree = "<group>"; };
+		AF020000000000000000000A /* SheetReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetReadTests.swift; sourceTree = "<group>"; };
 		AF0400000000000000000003 /* SnapScan.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SnapScan.entitlements; sourceTree = "<group>"; };
 		AF0200000000000000000006 /* FrameImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameImageTests.swift; sourceTree = "<group>"; };
 		AF0100000000000000000014 /* USBTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBTransport.swift; sourceTree = "<group>"; };
@@ -191,6 +193,7 @@
 				AF0200000000000000000008 /* NameSuggesterTests.swift */,
 				AF0200000000000000000006 /* FrameImageTests.swift */,
 				AF0200000000000000000007 /* PageGeometryTests.swift */,
+				AF020000000000000000000A /* SheetReadTests.swift */,
 			);
 			name = SnapScanTests;
 			path = Tests/SnapScanTests;
@@ -388,6 +391,7 @@
 				AB0200000000000000000008 /* NameSuggesterTests.swift in Sources */,
 				AB0200000000000000000006 /* FrameImageTests.swift in Sources */,
 				AB0200000000000000000007 /* PageGeometryTests.swift in Sources */,
+				AB020000000000000000000A /* SheetReadTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

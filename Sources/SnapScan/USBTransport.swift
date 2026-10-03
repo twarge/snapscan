@@ -3,6 +3,17 @@ import IOKit
 import IOKit.usb
 import IOKit.usb.IOUSBLib
 
+/// What reading a sheet asks of the connection: one command, its data, its
+/// status. `USBTransport` is the real one; tests stand a simulated scanner in
+/// its place.
+nonisolated protocol ScannerLink {
+    func send(cdb: [UInt8], dataOut: Data?, dataIn: Int) throws -> (
+        status: USBTransport.CommandStatus, data: Data
+    )
+}
+
+extension USBTransport: ScannerLink {}
+
 /// Native USB transport for the scanner, implementing the framing recorded
 /// in docs/PROTOCOL.md: a 31-byte command packet tagged 0x43 carrying a SCSI
 /// CDB, an optional data phase, and a 13-byte status packet tagged 0x53.

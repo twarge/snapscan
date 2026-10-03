@@ -195,6 +195,7 @@ actor NativeScanner {
             }
 
             // Feed a sheet. An empty hopper reports itself here.
+            let feedStarted = ContinuousClock.now
             let (feedStatus, _) = try transport.send(cdb: ScannerCommands.objectPositionLoad())
             if feedStatus == .checkCondition {
                 let verdict = try Self.sense(transport)
@@ -221,18 +222,15 @@ actor NativeScanner {
             }
 
             // Each window yields one page image.
-            for window in windows {
-                if cancelFlag.isCancelled { break }
-                onEvent(.pageStarted(index: pageIndex))
-                let image = try readPage(
-                    transport: transport, window: window, settings: settings,
-                    pageIndex: pageIndex, onEvent: onEvent)
-                if let image {
-                    onEvent(.pageComplete(index: pageIndex, image: image))
-                    pagesScanned += 1
-                    pageIndex += 1
-                }
-            }
+            let readStarted = ContinuousClock.now
+            let pages = try readSheet(
+                transport: transport, windows: windows, firstPageIndex: pageIndex,
+                onEvent: onEvent)
+            pagesScanned += pages
+            pageIndex += pages
+            Self.trace(
+                "sheet: fed in \(Self.milliseconds(readStarted - feedStarted)), "
+                    + "read in \(Self.milliseconds(ContinuousClock.now - readStarted))")
         }
     }
 
@@ -246,7 +244,7 @@ actor NativeScanner {
         func run(
             _ label: String, _ cdb: [UInt8], dataOut: Data? = nil, dataIn: Int = 0
         ) throws {
-            if Self.verbose { FileHandle.standardError.write(Data("  \(label)…\n".utf8)) }
+            Self.trace("\(label)…")
             let (status, _) = try transport.send(
                 cdb: cdb, dataOut: dataOut, dataIn: dataIn)
             if status == .checkCondition {
@@ -303,19 +301,112 @@ actor NativeScanner {
         _ = try? readSensors()
     }
 
-    /// Streams one window's image, emitting partial previews as rows arrive.
-    private func readPage(
-        transport: USBTransport,
-        window: ScannerCommands.Window,
-        settings: ScanSettings,
-        pageIndex: Int,
-        onEvent: @escaping @Sendable (BatchEvent) -> Void
-    ) throws -> CGImage? {
+    /// One side of a sheet as it streams in.
+    private struct SideRead {
+        let window: ScannerCommands.Window
+        let width: Int
+        /// An upper bound when auto length detection is on
+        /// (docs/PROTOCOL.md §6).
+        let lines: Int
+        let chunkLength: Int
+        var buffer = Data()
+        var finished = false
+        /// Reads the scanner answered with "nothing for this side yet".
+        var waits = 0
+
+        var bytesPerLine: Int { width * 3 }  // always 24-bit RGB
+        var rows: Int { buffer.count / bytesPerLine }
+
+        func image() -> CGImage? {
+            guard rows > 0 else { return nil }
+            // The device returns inverted reflectance (docs/PROTOCOL.md §4.3).
+            return FrameImage.make(
+                pixels: buffer, width: width, height: rows,
+                bytesPerRow: bytesPerLine, format: .rgb24, inverted: true)
+        }
+    }
+
+    /// Streams one sheet — both of its sides in duplex — emitting partial
+    /// previews as rows arrive and its pages in order. Returns how many pages
+    /// it produced.
+    ///
+    /// The two sides are read in turn, each as it has data, as the reference
+    /// stack was captured doing (docs/PROTOCOL.md §4.4). The scanner images
+    /// both in a single pass, so draining the front before touching the back
+    /// left the link half idle while the paper moved, then held the next
+    /// sheet until the whole back side had crossed the wire.
+    func readSheet(
+        transport: some ScannerLink, windows: [ScannerCommands.Window],
+        firstPageIndex: Int, onEvent: @escaping @Sendable (BatchEvent) -> Void
+    ) throws -> Int {
+        var sides = try windows.map { try beginSide(transport: transport, window: $0) }
+        var pageIndex = firstPageIndex
+        // The side being previewed: the first not yet handed over. Pages go
+        // out in sheet order even when the back finishes first.
+        var shown = 0
+        var lastPartial = ContinuousClock.now
+        onEvent(.pageStarted(index: pageIndex))
+
+        while shown < sides.count {
+            if cancelFlag.isCancelled {
+                // Keep what has arrived of the page on screen, as stopping
+                // always has; the sides after it are dropped.
+                for index in sides.indices where index > shown { sides[index].buffer = Data() }
+                for index in sides.indices { sides[index].finished = true }
+            }
+
+            var progressed = false
+            for index in sides.indices where !sides[index].finished {
+                if try readChunk(into: &sides[index], transport: transport) {
+                    progressed = true
+                }
+            }
+
+            while shown < sides.count, sides[shown].finished {
+                let side = sides[shown]
+                Self.trace(
+                    "  side \(String(format: "%02x", side.window.rawValue)): "
+                        + "\(side.rows) lines, \(side.waits) not-ready reads")
+                if let image = side.image() {
+                    onEvent(.pageComplete(index: pageIndex, image: image))
+                    pageIndex += 1
+                }
+                sides[shown].buffer = Data()
+                shown += 1
+                if shown < sides.count { onEvent(.pageStarted(index: pageIndex)) }
+            }
+            guard shown < sides.count else { break }
+
+            if !progressed {
+                // Every side is waiting on the paper. Reading again at once
+                // would only fetch another full buffer of nothing.
+                Thread.sleep(forTimeInterval: 0.002)
+            }
+
+            let now = ContinuousClock.now
+            if now - lastPartial > .milliseconds(250) {
+                lastPartial = now
+                let side = sides[shown]
+                if side.rows > 8, let partial = side.image() {
+                    let fraction = side.lines > 0
+                        ? min(1, Double(side.rows) / Double(side.lines)) : nil
+                    onEvent(.pagePartial(index: pageIndex, image: partial, fraction: fraction))
+                }
+            }
+        }
+        return pageIndex - firstPageIndex
+    }
+
+    /// Asks one side's size and arms its read-ahead, before any of the
+    /// sheet's image data is read.
+    private func beginSide(
+        transport: some ScannerLink, window: ScannerCommands.Window
+    ) throws -> SideRead {
         // Pixel size: width is exact; the line count is an upper bound when
         // auto length detection is on (docs/PROTOCOL.md §6).
         let (sizeStatus, sizeData) = try transport.send(
             cdb: ScannerCommands.read(type: .pixelSize, window: window, length: 32),
-            dataIn: 32)
+            dataOut: nil, dataIn: 32)
         if sizeStatus == .checkCondition { _ = try Self.sense(transport) }
         guard let size = ScannerCommands.parsePixelSize(sizeData), size.width > 0 else {
             throw ScanError.unexpectedStatus("scanner did not report a page size")
@@ -331,75 +422,70 @@ actor NativeScanner {
         // reference stack sends this between the pixel-size read and the
         // image reads. Refusal is not fatal; the scan works either way.
         let (armStatus, _) = try transport.send(
-            cdb: ScannerCommands.armReadAhead(window: window, length: chunkLength))
+            cdb: ScannerCommands.armReadAhead(window: window, length: chunkLength),
+            dataOut: nil, dataIn: 0)
         if armStatus == .checkCondition { _ = try? Self.sense(transport) }
 
-        var buffer = Data()
+        var side = SideRead(
+            window: window, width: size.width, lines: size.lines, chunkLength: chunkLength)
         // Reserve the whole page up front: growing a 25–100 MB buffer by
         // repeated reallocation copies it many times over.
-        buffer.reserveCapacity(
+        side.buffer.reserveCapacity(
             size.lines > 0 ? bytesPerLine * size.lines : chunkLength * 8)
-        var lastPartial = ContinuousClock.now
+        return side
+    }
 
-        readLoop: while true {
-            if cancelFlag.isCancelled { break }
+    /// Reads the next chunk of one side. True when that moved the side on —
+    /// image data, or its end — and false when the scanner had nothing for
+    /// it yet.
+    private func readChunk(
+        into side: inout SideRead, transport: some ScannerLink
+    ) throws -> Bool {
+        let lengthBeforeRead = side.buffer.count
+        let (status, data) = try transport.send(
+            cdb: ScannerCommands.read(
+                type: .image, window: side.window, length: side.chunkLength),
+            dataOut: nil, dataIn: side.chunkLength)
+        side.buffer.append(data)
+        guard status == .checkCondition else { return true }
 
-            let lengthBeforeRead = buffer.count
-            let (status, data) = try transport.send(
-                cdb: ScannerCommands.read(
-                    type: .image, window: window, length: chunkLength),
-                dataIn: chunkLength)
-            buffer.append(data)
-
-            if status == .checkCondition {
-                switch try Self.sense(transport) {
-                case .endOfPage(let residual):
-                    // The tail of this read was not filled.
-                    if residual > 0, residual <= buffer.count {
-                        buffer.removeLast(residual)
-                    }
-                    break readLoop
-                case .notReadyRetry:
-                    // The device still returns a full buffer here, but its
-                    // contents are not image data — drop it and ask again,
-                    // or the page grows without bound.
-                    buffer.removeLast(buffer.count - lengthBeforeRead)
-                    continue readLoop
-                case .other(let key, let asc, let ascq):
-                    throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
-                }
+        switch try Self.sense(transport) {
+        case .endOfPage(let residual):
+            // The tail of this read was not filled.
+            if residual > 0, residual <= side.buffer.count {
+                side.buffer.removeLast(residual)
             }
-
-            let now = ContinuousClock.now
-            if now - lastPartial > .milliseconds(250) {
-                lastPartial = now
-                let rows = buffer.count / bytesPerLine
-                if rows > 8,
-                    let partial = FrameImage.make(
-                        pixels: buffer, width: size.width, height: rows,
-                        bytesPerRow: bytesPerLine, format: .rgb24, inverted: true) {
-                    let fraction = size.lines > 0
-                        ? min(1, Double(rows) / Double(size.lines)) : nil
-                    onEvent(
-                        .pagePartial(index: pageIndex, image: partial, fraction: fraction))
-                }
-            }
+            side.finished = true
+            return true
+        case .notReadyRetry:
+            // The device still returns a full buffer here, but its contents
+            // are not image data — drop it and ask again, or the page grows
+            // without bound.
+            side.buffer.removeLast(side.buffer.count - lengthBeforeRead)
+            side.waits += 1
+            return false
+        case .other(let key, let asc, let ascq):
+            throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
         }
+    }
 
-        let rows = buffer.count / bytesPerLine
-        guard rows > 0 else { return nil }
-        // The device returns inverted reflectance (docs/PROTOCOL.md §4.3).
-        return FrameImage.make(
-            pixels: buffer, width: size.width, height: rows,
-            bytesPerRow: bytesPerLine, format: .rgb24, inverted: true)
+    /// Step tracing, for bring-up and for timing the paper path.
+    private nonisolated static func trace(_ message: @autoclosure () -> String) {
+        guard verbose else { return }
+        FileHandle.standardError.write(Data("  \(message())\n".utf8))
+    }
+
+    private nonisolated static func milliseconds(_ duration: Duration) -> String {
+        let (seconds, attoseconds) = duration.components
+        return "\(seconds * 1000 + attoseconds / 1_000_000_000_000_000) ms"
     }
 
     /// Issues REQUEST SENSE and interprets the reply.
-    private static func sense(_ transport: USBTransport) throws
+    private static func sense(_ transport: some ScannerLink) throws
         -> ScannerCommands.SenseVerdict
     {
         let (_, data) = try transport.send(
-            cdb: ScannerCommands.requestSense(), dataIn: 18)
+            cdb: ScannerCommands.requestSense(), dataOut: nil, dataIn: 18)
         guard let verdict = ScannerCommands.parseSense(data) else {
             throw ScanError.unexpectedStatus("could not read scanner status")
         }
