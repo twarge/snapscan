@@ -91,6 +91,14 @@ default), 0.5 MB on Maximum. Black & white scans are 1 bit a pixel and are
 always stored losslessly, whatever the setting: JPEG would enlarge them and
 blur the edges they exist to keep sharp.
 
+**Color** (Color, Grayscale, Black & White): the scanner only ever sends
+colour, so the other two are made on the Mac, as the last step of each
+page's processing — after it has been straightened and read, which both do
+better in colour. Black & white judges each pixel against the paper around
+it rather than one level for the whole page, so a shadow along a fold or a
+tinted form box goes white while the print on it stays black. It's meant for
+documents: photographs come out as hard-edged shapes.
+
 **Sides**: both sides, the front, or the back. The back alone is scanned in
 the same single pass as duplex, with the fronts dropped.
 

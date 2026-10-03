@@ -19,6 +19,7 @@
 		AB0100000000000000000017 /* NameSuggester.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000017 /* NameSuggester.swift */; };
 		AB0100000000000000000018 /* TextLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000018 /* TextLayer.swift */; };
 		AB010000000000000000001C /* BlankPageDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000001C /* BlankPageDetector.swift */; };
+		AB010000000000000000001D /* PageTone.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000001D /* PageTone.swift */; };
 		AB0100000000000000000019 /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000019 /* Intents.swift */; };
 		AB010000000000000000001A /* ScanNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000001A /* ScanNotifier.swift */; };
 		AB010000000000000000001B /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000001B /* Commands.swift */; };
@@ -35,6 +36,7 @@
 		AB0200000000000000000007 /* PageGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000007 /* PageGeometryTests.swift */; };
 		AB0200000000000000000009 /* BlankPageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000009 /* BlankPageTests.swift */; };
 		AB020000000000000000000A /* SheetReadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF020000000000000000000A /* SheetReadTests.swift */; };
+		AB020000000000000000000B /* PageToneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF020000000000000000000B /* PageToneTests.swift */; };
 		AB0200000000000000000006 /* FrameImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000006 /* FrameImageTests.swift */; };
 		AB0100000000000000000014 /* USBTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000014 /* USBTransport.swift */; };
 		AB0100000000000000000015 /* ScannerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000015 /* ScannerCommands.swift */; };
@@ -75,6 +77,7 @@
 		AF0100000000000000000017 /* NameSuggester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NameSuggester.swift; sourceTree = "<group>"; };
 		AF0100000000000000000018 /* TextLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextLayer.swift; sourceTree = "<group>"; };
 		AF010000000000000000001C /* BlankPageDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlankPageDetector.swift; sourceTree = "<group>"; };
+		AF010000000000000000001D /* PageTone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageTone.swift; sourceTree = "<group>"; };
 		AF0100000000000000000019 /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
 		AF010000000000000000001A /* ScanNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanNotifier.swift; sourceTree = "<group>"; };
 		AF010000000000000000001B /* Commands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Commands.swift; sourceTree = "<group>"; };
@@ -89,6 +92,7 @@
 		AF0200000000000000000007 /* PageGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageGeometryTests.swift; sourceTree = "<group>"; };
 		AF0200000000000000000009 /* BlankPageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlankPageTests.swift; sourceTree = "<group>"; };
 		AF020000000000000000000A /* SheetReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetReadTests.swift; sourceTree = "<group>"; };
+		AF020000000000000000000B /* PageToneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageToneTests.swift; sourceTree = "<group>"; };
 		AF0400000000000000000003 /* SnapScan.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SnapScan.entitlements; sourceTree = "<group>"; };
 		AF0200000000000000000006 /* FrameImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameImageTests.swift; sourceTree = "<group>"; };
 		AF0100000000000000000014 /* USBTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBTransport.swift; sourceTree = "<group>"; };
@@ -167,6 +171,7 @@
 				AF0100000000000000000017 /* NameSuggester.swift */,
 				AF0100000000000000000018 /* TextLayer.swift */,
 				AF010000000000000000001C /* BlankPageDetector.swift */,
+				AF010000000000000000001D /* PageTone.swift */,
 				AF0100000000000000000019 /* Intents.swift */,
 				AF010000000000000000001A /* ScanNotifier.swift */,
 				AF010000000000000000001B /* Commands.swift */,
@@ -200,6 +205,7 @@
 				AF0200000000000000000007 /* PageGeometryTests.swift */,
 				AF0200000000000000000009 /* BlankPageTests.swift */,
 				AF020000000000000000000A /* SheetReadTests.swift */,
+				AF020000000000000000000B /* PageToneTests.swift */,
 			);
 			name = SnapScanTests;
 			path = Tests/SnapScanTests;
@@ -377,6 +383,7 @@
 				AB0100000000000000000017 /* NameSuggester.swift in Sources */,
 				AB0100000000000000000018 /* TextLayer.swift in Sources */,
 				AB010000000000000000001C /* BlankPageDetector.swift in Sources */,
+				AB010000000000000000001D /* PageTone.swift in Sources */,
 				AB0100000000000000000019 /* Intents.swift in Sources */,
 				AB010000000000000000001A /* ScanNotifier.swift in Sources */,
 				AB010000000000000000001B /* Commands.swift in Sources */,
@@ -400,6 +407,7 @@
 				AB0200000000000000000007 /* PageGeometryTests.swift in Sources */,
 				AB0200000000000000000009 /* BlankPageTests.swift in Sources */,
 				AB020000000000000000000A /* SheetReadTests.swift in Sources */,
+				AB020000000000000000000B /* PageToneTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

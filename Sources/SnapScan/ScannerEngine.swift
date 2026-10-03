@@ -273,6 +273,7 @@ final class ScannerEngine {
             let wantsProcessing =
                 settings.autoRotate || settings.deskew || settings.paperSize == .auto
                 || settings.autocrop || settings.searchableText || settings.skipBlankPages
+                || settings.mode != .color
             page.isProcessing = wantsProcessing
             document.pages.append(page)
             livePageImage = nil
@@ -302,6 +303,7 @@ final class ScannerEngine {
         // paper smaller than the size it was scanned at.
         let cropToSheet = autoSize || settings.autocrop
         let searchable = settings.searchableText
+        let tone = settings.mode
         let dpi = settings.resolution
         guard let original = document.pages.first(where: { $0.id == pageID })?.image
         else {
@@ -343,6 +345,11 @@ final class ScannerEngine {
                 // describe the image as it will finally be drawn, after every
                 // crop and rotation.
                 let textLines = searchable ? await TextLayer.recognize(in: image) : []
+                // Grayscale or black & white last of all, once nothing else
+                // needs the colour.
+                if let toned = PageTone.render(image, as: tone, dpi: dpi) {
+                    image = toned
+                }
                 return (image: image, snapped: snapped, textLines: textLines, isBlank: false)
             }.value
 
@@ -398,7 +405,7 @@ final class ScannerEngine {
         else { return }
         let wantsProcessing =
             settings.autoRotate || settings.deskew || settings.paperSize == .auto
-            || settings.searchableText
+            || settings.searchableText || settings.mode != .color
         for var page in document.skippedBlankPages {
             page.isBlank = false
             page.isProcessing = wantsProcessing
