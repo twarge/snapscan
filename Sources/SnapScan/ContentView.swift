@@ -593,11 +593,21 @@ struct ContentView: View {
                             lineWidth: isSelected ? 3 : 1)
                 )
                 .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                // Found blank: it stays in view until its batch finishes, then
+                // leaves for the count in the bottom bar.
+                .opacity(page.isBlank ? 0.5 : 1)
                 .overlay(alignment: .bottomTrailing) {
                     if page.isProcessing {
                         ProgressView()
                             .controlSize(.small)
                             .padding(5)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+                            .padding(4)
+                    } else if page.isBlank {
+                        Text("Blank")
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
                             .padding(4)
                     }
@@ -695,6 +705,14 @@ struct ContentView: View {
         HStack {
             Text("\(engine.pages.count) page\(engine.pages.count == 1 ? "" : "s")")
                 .foregroundStyle(.secondary)
+            if let skipped = engine.current?.skippedBlankPages.count, skipped > 0 {
+                Text("· \(skipped) blank page\(skipped == 1 ? "" : "s") skipped")
+                    .foregroundStyle(.secondary)
+                Button("Put Back") { engine.restoreSkippedBlankPages() }
+                    .buttonStyle(.link)
+                    .disabled(engine.isBusy)
+                    .help("Return the skipped pages to where they were scanned")
+            }
             if let error = engine.lastError {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)

@@ -116,7 +116,9 @@ nonisolated struct ScanSettings: Codable {
     var paperSize: PaperSize = .letter
     var deskew: Bool = true
     var autocrop: Bool = false
-    var skipBlankPages: Bool = false
+    /// Leave blank pages out of the PDF — chiefly the empty backs a duplex
+    /// scan of single-sided paper produces. They can be put back.
+    var skipBlankPages: Bool = true
     var autoRotate: Bool = true
     var hardwareButton: Bool = true
     /// Downloads works sandboxed without a grant (downloads entitlement),
@@ -292,6 +294,12 @@ final class ActiveDocument: Identifiable {
     /// A name has already been proposed for this document; later batches
     /// appended to it don't re-open the question.
     var didSuggestName = false
+    /// Pages found blank and taken out, in scan order, so they can be put back.
+    var skippedBlankPages: [ScannedPage] = []
+    /// A PDF write is under way; another request waits for it, then writes
+    /// once more with whatever the pages are by then.
+    var isWriting = false
+    var needsRewrite = false
 
     var displayName: String {
         url?.deletingPathExtension().lastPathComponent ?? pendingName ?? ""
@@ -306,8 +314,13 @@ nonisolated struct ScannedPage: Identifiable {
     let id = UUID()
     var image: CGImage
     let dpi: Int
+    /// When the page came off the scanner — the order pages put back after
+    /// being skipped as blank return to.
+    let scannedAt = ContinuousClock.now
     /// True while the page is being auto-rotated/straightened in the background.
     var isProcessing = false
+    /// Found blank; it's taken out once its batch has finished processing.
+    var isBlank = false
     /// Set when auto size detection snapped this page to a standard size:
     /// the PDF page takes this size and the image is centered on it.
     var snappedSizeName: String?

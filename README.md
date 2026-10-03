@@ -67,6 +67,17 @@ copied, and Spotlight indexes the contents — macOS's own PDF importer reads
 embedded text, so there's no importer here. The recognition rides along with
 the straightening pass that already runs per page.
 
+**Blank pages** (Cleanup ▸ Skip blank pages, on by default) are left out of
+the PDF — chiefly the empty backs of a duplex scan. A page counts as blank
+when nothing on it is both sharp and well darker than the paper, so
+show-through from the other side, paper texture, dust, the sheet's edge
+shadow, and the streak a speck on the sensor draws don't count, while a
+word or two, faint pencil or a highlighter stroke does. Blank pages show
+dimmed with a "Blank" tag while the batch scans and are taken out when it
+finishes; the bottom bar counts them, and **Put Back** returns them to where
+they were scanned. A document that's blank throughout is kept as it is —
+that's paper fed face down.
+
 **Compression** (Saving ▸ Compression) trades file size against fidelity.
 A 300 dpi colour page costs about 12 MB stored losslessly, so a ten-page
 duplex batch runs past 100 MB; the lossy levels store each page as JPEG
@@ -158,6 +169,13 @@ and uses the async Swift Vision API.
   next scan can start while the previous document is still processing —
   such documents appear as spinner rows in the sidebar until their final
   PDF is written.
+- `Sources/SnapScan/BlankPageDetector.swift` — blank-page detection at
+  150 dpi: ink is what falls well below the brightest paper within half a
+  millimetre, in each pixel's darkest channel (so colour ink counts and
+  tinted paper doesn't); marks are grouped, and specks, long hairlines
+  (folds, sensor streaks) and column-aligned dashes (a streak from dust
+  that touches the sensor intermittently) are discounted. It runs first in
+  each page's processing, so a blank page skips the Vision passes.
 - `Sources/SnapScan/OrientationDetector.swift` — auto-rotate and deskew.
   Accurate OCR reads text at any rotation but keeps its observation quads
   in the *given* coordinate space, so the circular mean of the text lines'

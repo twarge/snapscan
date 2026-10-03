@@ -239,11 +239,14 @@ final class ScannerEngine {
 
         if !document.pages.isEmpty {
             // Save now with whatever images exist (crash-safe); straightened
-            // pages trigger a rewrite as they drain.
-            await save(document)
+            // pages trigger a rewrite as they drain. Flagged before saving, so
+            // a page that finishes during this write still gets written.
             if document.processingRemaining > 0 {
                 document.needsFinalSave = true
+            } else {
+                takeOutBlankPages(from: document)
             }
+            await save(document)
             // Reading the page and asking the model for a name takes a couple
             // of seconds — unattached, so the next sheet can go in meanwhile.
             Task { await self.suggestName(for: document) }
@@ -269,7 +272,7 @@ final class ScannerEngine {
             var page = ScannedPage(image: image, dpi: settings.resolution)
             let wantsProcessing =
                 settings.autoRotate || settings.deskew || settings.paperSize == .auto
-                || settings.searchableText
+                || settings.searchableText || settings.skipBlankPages
             page.isProcessing = wantsProcessing
             document.pages.append(page)
             livePageImage = nil
@@ -283,8 +286,14 @@ final class ScannerEngine {
     /// Straightens (and in auto size mode, crops and size-snaps) one page
     /// concurrently; the grid shows a spinner on the page's cell meanwhile.
     /// Scanning (even of the next document) continues.
-    private func startProcessing(pageID: UUID, in document: ActiveDocument) {
+    ///
+    /// A page found blank goes no further — it's about to be left out, so
+    /// there's nothing worth reading or straightening on it.
+    private func startProcessing(
+        pageID: UUID, in document: ActiveDocument, checkingForBlank: Bool = true
+    ) {
         document.processingRemaining += 1
+        let checkBlank = checkingForBlank && settings.skipBlankPages
         let autoRotate = settings.autoRotate
         let deskew = settings.deskew
         let autoSize = settings.paperSize == .auto
@@ -298,9 +307,15 @@ final class ScannerEngine {
         Task { @MainActor in
             let result = await Task.detached(priority: .utility) {
                 var image = original
+                var snapped: (name: String, widthMM: Double, heightMM: Double)? = nil
                 if autoSize, let bounds = PageGeometry.contentBounds(of: image),
                     let cropped = image.cropping(to: bounds) {
                     image = cropped
+                }
+                if checkBlank, BlankPageDetector.isBlank(image, dpi: dpi) {
+                    return (
+                        image: image, snapped: snapped, textLines: [TextLayer.Line](),
+                        isBlank: true)
                 }
                 if autoRotate {
                     let rotation = await OrientationDetector.rotationToUpright(for: image)
@@ -315,7 +330,6 @@ final class ScannerEngine {
                     image = straightened
                 }
                 // Snap after all rotations so the measured orientation is final.
-                var snapped: (name: String, widthMM: Double, heightMM: Double)? = nil
                 if autoSize {
                     snapped = PageGeometry.snappedSize(
                         widthMM: Double(image.width) / Double(dpi) * 25.4,
@@ -325,7 +339,7 @@ final class ScannerEngine {
                 // describe the image as it will finally be drawn, after every
                 // crop and rotation.
                 let textLines = searchable ? await TextLayer.recognize(in: image) : []
-                return (image: image, snapped: snapped, textLines: textLines)
+                return (image: image, snapped: snapped, textLines: textLines, isBlank: false)
             }.value
 
             if let index = document.pages.firstIndex(where: { $0.id == pageID }) {
@@ -336,6 +350,7 @@ final class ScannerEngine {
                     CGSize(width: $0.widthMM, height: $0.heightMM)
                 }
                 document.pages[index].textLines = result.textLines
+                document.pages[index].isBlank = result.isBlank
             }
             document.processingRemaining -= 1
             await self.processingDrained(for: document)
@@ -346,11 +361,57 @@ final class ScannerEngine {
         guard document.processingRemaining == 0 else { return }
         if document.needsFinalSave {
             document.needsFinalSave = false
+            takeOutBlankPages(from: document)
             await save(document)
         }
         if document.isRetired {
             backgroundDocuments.removeAll { $0.id == document.id }
             ScanLibrary.shared.refresh()
+        }
+    }
+
+    /// Takes out the pages processing found blank, once the whole batch has
+    /// been through it — so pages don't vanish and renumber mid-scan.
+    ///
+    /// A document blank from end to end keeps its pages: that's paper fed
+    /// face down, or a blank sheet scanned on purpose, and an empty result
+    /// would explain neither.
+    private func takeOutBlankPages(from document: ActiveDocument) {
+        let blank = document.pages.filter(\.isBlank)
+        guard !blank.isEmpty, blank.count < document.pages.count else { return }
+        document.pages.removeAll(where: \.isBlank)
+        document.skippedBlankPages =
+            (document.skippedBlankPages + blank).sorted { $0.scannedAt < $1.scannedAt }
+    }
+
+    /// Returns the pages skipped as blank to where they were scanned, and
+    /// keeps them from being skipped again.
+    ///
+    /// Being judged blank spared them straightening and the text layer, so
+    /// they get that now — whatever is on them was enough to be wanted.
+    func restoreSkippedBlankPages() {
+        guard !isBusy, let document = current, !document.skippedBlankPages.isEmpty
+        else { return }
+        let wantsProcessing =
+            settings.autoRotate || settings.deskew || settings.paperSize == .auto
+            || settings.searchableText
+        for var page in document.skippedBlankPages {
+            page.isBlank = false
+            page.isProcessing = wantsProcessing
+            let index =
+                document.pages.firstIndex { $0.scannedAt > page.scannedAt }
+                ?? document.pages.endIndex
+            document.pages.insert(page, at: index)
+        }
+        let restored = document.skippedBlankPages.map(\.id)
+        document.skippedBlankPages = []
+        if wantsProcessing {
+            document.needsFinalSave = true
+            for id in restored {
+                startProcessing(pageID: id, in: document, checkingForBlank: false)
+            }
+        } else {
+            Task { await save(document) }
         }
     }
 
@@ -477,7 +538,25 @@ final class ScannerEngine {
     // MARK: - Document persistence
 
     /// Writes/rewrites a document's PDF in the destination folder.
+    ///
+    /// One write at a time per document: asked again while one is running,
+    /// it lets that one finish and then writes once more with the pages as
+    /// they are by then. Two writes never share the staging file, and the
+    /// last pages always reach the disk.
     private func save(_ document: ActiveDocument) async {
+        guard !document.isWriting else {
+            document.needsRewrite = true
+            return
+        }
+        document.isWriting = true
+        defer { document.isWriting = false }
+        repeat {
+            document.needsRewrite = false
+            await write(document)
+        } while document.needsRewrite
+    }
+
+    private func write(_ document: ActiveDocument) async {
         guard !document.pages.isEmpty else { return }
         do {
             let directory = settings.destinationURL
@@ -535,7 +614,8 @@ final class ScannerEngine {
         guard Self.isDefaultDocumentName(document.displayName) else { return }
         document.didSuggestName = true
 
-        let images = document.pages.prefix(NameSuggester.pagesRead).map(\.image)
+        let images = document.pages.filter { !$0.isBlank }
+            .prefix(NameSuggester.pagesRead).map(\.image)
         isNaming = true
         let suggestion = await NameSuggester.suggest(for: Array(images))
         isNaming = false
