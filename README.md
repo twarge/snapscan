@@ -58,7 +58,12 @@ detection, crops to the detected paper,
 and snaps to a standard size (Letter, A4, Legal, A5, photo sizes, …) when
 within ~5 mm per axis — receipts and other odd sizes keep their exact
 measured dimensions. Snapped pages are centered on the standard-size PDF
-page; the page cell shows what was decided.
+page; the page cell shows what was decided. With a fixed paper size,
+Cleanup ▸ Crop to content crops each page to the sheet the same way, without
+snapping, for paper smaller than the size chosen. The sheet is found against
+the scanner's light gray backing, side by side: a side is cut only where it
+shows plain backing, and only when two sides agree on it, so a page that
+reaches the edges is never trimmed.
 
 **Searchable scans** (Saving ▸ Make scans searchable): every page is read
 with Vision and its words are written into the PDF as an invisible text

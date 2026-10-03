@@ -272,7 +272,7 @@ final class ScannerEngine {
             var page = ScannedPage(image: image, dpi: settings.resolution)
             let wantsProcessing =
                 settings.autoRotate || settings.deskew || settings.paperSize == .auto
-                || settings.searchableText || settings.skipBlankPages
+                || settings.autocrop || settings.searchableText || settings.skipBlankPages
             page.isProcessing = wantsProcessing
             document.pages.append(page)
             livePageImage = nil
@@ -283,8 +283,9 @@ final class ScannerEngine {
         }
     }
 
-    /// Straightens (and in auto size mode, crops and size-snaps) one page
-    /// concurrently; the grid shows a spinner on the page's cell meanwhile.
+    /// Straightens one page — and crops it to the sheet, in auto size mode
+    /// (which also size-snaps it) or with Crop to content — concurrently;
+    /// the grid shows a spinner on the page's cell meanwhile.
     /// Scanning (even of the next document) continues.
     ///
     /// A page found blank goes no further — it's about to be left out, so
@@ -297,6 +298,9 @@ final class ScannerEngine {
         let autoRotate = settings.autoRotate
         let deskew = settings.deskew
         let autoSize = settings.paperSize == .auto
+        // Auto always crops to the sheet; a fixed size does when asked, for
+        // paper smaller than the size it was scanned at.
+        let cropToSheet = autoSize || settings.autocrop
         let searchable = settings.searchableText
         let dpi = settings.resolution
         guard let original = document.pages.first(where: { $0.id == pageID })?.image
@@ -308,7 +312,7 @@ final class ScannerEngine {
             let result = await Task.detached(priority: .utility) {
                 var image = original
                 var snapped: (name: String, widthMM: Double, heightMM: Double)? = nil
-                if autoSize, let bounds = PageGeometry.contentBounds(of: image),
+                if cropToSheet, let bounds = PageGeometry.contentBounds(of: image),
                     let cropped = image.cropping(to: bounds) {
                     image = cropped
                 }

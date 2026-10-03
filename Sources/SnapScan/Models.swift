@@ -115,6 +115,8 @@ nonisolated struct ScanSettings: Codable {
     var resolution: Int = 300
     var paperSize: PaperSize = .letter
     var deskew: Bool = true
+    /// Crop each page to the sheet when a fixed paper size is chosen, for
+    /// paper smaller than that size. Auto always crops.
     var autocrop: Bool = false
     /// Leave blank pages out of the PDF — chiefly the empty backs a duplex
     /// scan of single-sided paper produces. They can be put back.
