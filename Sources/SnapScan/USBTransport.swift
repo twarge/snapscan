@@ -12,7 +12,7 @@ nonisolated protocol ScannerLink {
     )
 }
 
-extension USBTransport: ScannerLink {}
+nonisolated extension USBTransport: ScannerLink {}
 
 /// Native USB transport for the scanner, implementing the framing recorded
 /// in docs/PROTOCOL.md: a 31-byte command packet tagged 0x43 carrying a SCSI
