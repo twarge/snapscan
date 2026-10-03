@@ -181,8 +181,13 @@ actor NativeScanner {
         guard let transport else { throw ScanError.notOpen }
         cancelFlag.reset()
 
+        // The back alone is scanned as duplex with the fronts dropped: one pass
+        // images both sides anyway, and asking for the back window by itself
+        // isn't in any capture (docs/PROTOCOL.md §4.4).
         let windows: [ScannerCommands.Window] =
-            settings.source == .duplex ? [.front, .back] : [.front]
+            settings.source == .front ? [.front] : [.front, .back]
+        let kept: Set<ScannerCommands.Window> =
+            settings.source == .back ? [.back] : Set(windows)
         var pageIndex = firstPageIndex
         var pagesScanned = 0
 
@@ -224,8 +229,8 @@ actor NativeScanner {
             // Each window yields one page image.
             let readStarted = ContinuousClock.now
             let pages = try readSheet(
-                transport: transport, windows: windows, firstPageIndex: pageIndex,
-                onEvent: onEvent)
+                transport: transport, windows: windows, keeping: kept,
+                firstPageIndex: pageIndex, onEvent: onEvent)
             pagesScanned += pages
             pageIndex += pages
             Self.trace(
@@ -337,21 +342,35 @@ actor NativeScanner {
     /// sheet until the whole back side had crossed the wire.
     func readSheet(
         transport: some ScannerLink, windows: [ScannerCommands.Window],
+        keeping kept: Set<ScannerCommands.Window>? = nil,
         firstPageIndex: Int, onEvent: @escaping @Sendable (BatchEvent) -> Void
     ) throws -> Int {
         var sides = try windows.map { try beginSide(transport: transport, window: $0) }
+        // A side that isn't kept is still read — the scanner holds it until
+        // it is — but never becomes a page.
+        let keeps = windows.map { kept?.contains($0) ?? true }
         var pageIndex = firstPageIndex
-        // The side being previewed: the first not yet handed over. Pages go
-        // out in sheet order even when the back finishes first.
-        var shown = 0
+        // Sides are handed over in sheet order, even when the back finishes
+        // first; `handed` is the first not yet handed over.
+        var handed = 0
+        // The kept side on screen: the first kept one not yet handed over.
+        var previewed: Int?
+        func announceNext() {
+            let next = sides.indices.first { $0 >= handed && keeps[$0] }
+            guard let next, next != previewed else { return }
+            previewed = next
+            onEvent(.pageStarted(index: pageIndex))
+        }
         var lastPartial = ContinuousClock.now
-        onEvent(.pageStarted(index: pageIndex))
+        announceNext()
 
-        while shown < sides.count {
+        while handed < sides.count {
             if cancelFlag.isCancelled {
                 // Keep what has arrived of the page on screen, as stopping
                 // always has; the sides after it are dropped.
-                for index in sides.indices where index > shown { sides[index].buffer = Data() }
+                for index in sides.indices where index >= handed && index != previewed {
+                    sides[index].buffer = Data()
+                }
                 for index in sides.indices { sides[index].finished = true }
             }
 
@@ -362,20 +381,20 @@ actor NativeScanner {
                 }
             }
 
-            while shown < sides.count, sides[shown].finished {
-                let side = sides[shown]
+            while handed < sides.count, sides[handed].finished {
+                let side = sides[handed]
                 Self.trace(
                     "  side \(String(format: "%02x", side.window.rawValue)): "
                         + "\(side.rows) lines, \(side.waits) not-ready reads")
-                if let image = side.image() {
+                if keeps[handed], let image = side.image() {
                     onEvent(.pageComplete(index: pageIndex, image: image))
                     pageIndex += 1
                 }
-                sides[shown].buffer = Data()
-                shown += 1
-                if shown < sides.count { onEvent(.pageStarted(index: pageIndex)) }
+                sides[handed].buffer = Data()
+                handed += 1
+                announceNext()
             }
-            guard shown < sides.count else { break }
+            guard handed < sides.count else { break }
 
             if !progressed {
                 // Every side is waiting on the paper. Reading again at once
@@ -384,9 +403,9 @@ actor NativeScanner {
             }
 
             let now = ContinuousClock.now
-            if now - lastPartial > .milliseconds(250) {
+            if let previewed, now - lastPartial > .milliseconds(250) {
                 lastPartial = now
-                let side = sides[shown]
+                let side = sides[previewed]
                 if side.rows > 8, let partial = side.image() {
                     let fraction = side.lines > 0
                         ? min(1, Double(side.rows) / Double(side.lines)) : nil

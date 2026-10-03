@@ -91,6 +91,9 @@ default), 0.5 MB on Maximum. Black & white scans are 1 bit a pixel and are
 always stored losslessly, whatever the setting: JPEG would enlarge them and
 blur the edges they exist to keep sharp.
 
+**Sides**: both sides, the front, or the back. The back alone is scanned in
+the same single pass as duplex, with the fronts dropped.
+
 All settings live in SnapScan ▸ Settings (⌘,): sides, color mode, 150–600
 dpi, paper size, deskew, auto-crop, blank-page skip, auto-rotate, the scans
 folder, compression, searchable text, suggested names, the hardware button

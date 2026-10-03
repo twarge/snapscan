@@ -139,11 +139,12 @@ nonisolated private final class EventLog: @unchecked Sendable {
 @Suite struct SheetReadTests {
     private func read(
         _ scanner: SimulatedScanner, windows: [ScannerCommands.Window],
-        firstPageIndex: Int = 0
+        keeping kept: Set<ScannerCommands.Window>? = nil, firstPageIndex: Int = 0
     ) async throws -> (pages: Int, log: EventLog) {
         let log = EventLog()
         let pages = try await NativeScanner().readSheet(
-            transport: scanner, windows: windows, firstPageIndex: firstPageIndex
+            transport: scanner, windows: windows, keeping: kept,
+            firstPageIndex: firstPageIndex
         ) { log.append($0) }
         return (pages, log)
     }
@@ -177,6 +178,21 @@ nonisolated private final class EventLog: @unchecked Sendable {
         let backEnd = try #require(reads.firstIndex { $0.window == 0x80 && $0.outcome == .end })
         let frontEnd = try #require(reads.firstIndex { $0.window == 0x00 && $0.outcome == .end })
         #expect(backEnd < frontEnd)
+    }
+
+    @Test func backSideAloneKeepsOnlyTheBacks() async throws {
+        // The front is still read — the scanner holds it until it is — but
+        // only the back becomes a page, with the sheet's first page number.
+        let scanner = SimulatedScanner(
+            front: .init(lines: 200, delay: 0, rate: 5),
+            back: .init(lines: 180, delay: 4, rate: 5))
+        let (pages, log) = try await read(
+            scanner, windows: [.front, .back], keeping: [.back], firstPageIndex: 6)
+
+        #expect(pages == 1)
+        #expect(log.completed.map(\.index) == [6])
+        #expect(log.completed.map(\.height) == [180])
+        #expect(scanner.imageReads.contains { $0.window == 0x00 && $0.outcome == .end })
     }
 
     @Test func simplexReadsOnlyTheFront() async throws {
