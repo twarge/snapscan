@@ -58,16 +58,13 @@ import Testing
                 bytesPerRow: width, format: .gray8))
     }
 
-    @Test func findsPaperAgainstBlackBackground() throws {
+    @Test func darkSurroundingsAreLeftAlone() throws {
+        // This scanner's backing is light gray; black around the paper can
+        // only be a border printed on it, and that's part of the page.
         let frame = try makeFrame(
             width: 850, height: 1100,
             paper: CGRect(x: 200, y: 50, width: 400, height: 900))
-        let bounds = try #require(PageGeometry.contentBounds(of: frame))
-        // Within ~1% of the true edges (downsampling + fringe shaving).
-        #expect(abs(bounds.minX - 200) < 12)
-        #expect(abs(bounds.maxX - 600) < 12)
-        #expect(abs(bounds.minY - 50) < 15)
-        #expect(abs(bounds.maxY - 950) < 15)
+        #expect(PageGeometry.contentBounds(of: frame) == nil)
     }
 
     @Test func fullFrameHasNothingToCrop() throws {
@@ -138,6 +135,69 @@ import Testing
             paper: CGRect(x: 0, y: 0, width: 850, height: 1100),
             stripe: CGRect(x: 0, y: 0, width: 45, height: 1100))
         #expect(PageGeometry.contentBounds(of: frame) == nil)
+    }
+
+    /// Colour frames: the gray backing, a sheet of the given colour, and a
+    /// white label on it.
+    private func makeColorFrame(
+        width: Int, height: Int, sheet: CGRect, color: (UInt8, UInt8, UInt8),
+        label: CGRect
+    ) throws -> CGImage {
+        var noise: UInt64 = 11
+        var pixels = [UInt8](repeating: 0, count: width * height * 3)
+        for y in 0..<height {
+            for x in 0..<width {
+                noise = noise &* 6364136223846793005 &+ 1442695040888963407
+                let jitter = Int(noise >> 61) - 3
+                let point = CGPoint(x: x, y: y)
+                let rgb: (UInt8, UInt8, UInt8) =
+                    label.contains(point) ? (253, 253, 253)
+                    : sheet.contains(point) ? color : (234, 234, 234)
+                for (channel, value) in [rgb.0, rgb.1, rgb.2].enumerated() {
+                    pixels[3 * (y * width + x) + channel] =
+                        UInt8(max(0, min(255, Int(value) + jitter)))
+                }
+            }
+        }
+        return try #require(
+            FrameImage.make(
+                pixels: Data(pixels), width: width, height: height,
+                bytesPerRow: width * 3, format: .rgb24))
+    }
+
+    @Test func colouredPaperFillingTheFrameIsLeftWholeDespiteAWhiteLabel() throws {
+        // The label is the brightest thing in the frame, and the coloured
+        // margins are plain and darker than it — but they aren't backing.
+        let frame = try makeColorFrame(
+            width: 850, height: 1100,
+            sheet: CGRect(x: 0, y: 0, width: 850, height: 1100), color: (245, 205, 120),
+            label: CGRect(x: 300, y: 400, width: 300, height: 150))
+        #expect(PageGeometry.contentBounds(of: frame) == nil)
+    }
+
+    @Test func findsColouredPaperNotItsWhiteLabel() throws {
+        // A coloured sheet narrower than the frame, about as light as the
+        // backing, with a white label on it: the crop is the sheet.
+        let frame = try makeColorFrame(
+            width: 850, height: 1100,
+            sheet: CGRect(x: 150, y: 0, width: 550, height: 1100), color: (200, 225, 250),
+            label: CGRect(x: 300, y: 400, width: 250, height: 120))
+        let bounds = try #require(PageGeometry.contentBounds(of: frame))
+        #expect(abs(bounds.minX - 150) < 12)
+        #expect(abs(bounds.maxX - 700) < 12)
+        #expect(bounds.minY == 0 && bounds.maxY == 1100)
+    }
+
+    @Test func findsDarkColouredPaper() throws {
+        // Darker than the backing and with nothing white on it.
+        let frame = try makeColorFrame(
+            width: 850, height: 1100,
+            sheet: CGRect(x: 225, y: 0, width: 400, height: 600), color: (40, 60, 140),
+            label: .zero)
+        let bounds = try #require(PageGeometry.contentBounds(of: frame))
+        #expect(abs(bounds.minX - 225) < 12)
+        #expect(abs(bounds.maxX - 625) < 12)
+        #expect(abs(bounds.maxY - 600) < 15)
     }
 
     @Test func whiteBackgroundFrameIsLeftAlone() throws {

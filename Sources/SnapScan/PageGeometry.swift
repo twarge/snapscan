@@ -60,18 +60,21 @@ nonisolated enum PageGeometry {
         }
     }
 
-    /// Finds the sheet within the scanned frame, against whatever surrounds
-    /// it: this scanner's light gray backing — only ten or twenty levels
-    /// darker than white paper — or a black background. Returns a crop
-    /// rect in full-resolution pixels, or nil when the sheet fills the frame
-    /// and there's nothing to take off.
+    /// Finds the sheet within the scanned frame, against this scanner's
+    /// light gray backing — only ten or twenty levels darker than white
+    /// paper. Returns a crop rect in full-resolution pixels, or nil when the
+    /// sheet fills the frame and there's nothing to take off.
     ///
     /// Decided side by side. A side is cropped only when its outermost band
-    /// is plain, even background, well below the paper — and at least two
-    /// sides must agree on what that background is. A sheet that reaches an
-    /// edge leaves paper there, so that side is never touched, whatever is
-    /// printed near it; and a dark stripe printed down one edge of a page
-    /// can't pass for background on its own.
+    /// is plain, neutral, light gray, and set apart from the sheet — and at
+    /// least two sides must agree on it. A sheet that reaches an edge leaves
+    /// paper there, so that side is never touched, whatever is printed near
+    /// it. Coloured paper can't pass for backing, nor can a dark border
+    /// printed down a page's edges.
+    ///
+    /// The sheet is then whatever isn't backing: brighter than it, or a
+    /// different colour. Not merely the brightest thing in the frame — a
+    /// white label on coloured paper would otherwise be taken for the page.
     static func contentBounds(of image: CGImage) -> CGRect? {
         let maxDimension = 600
         let scale = Double(maxDimension) / Double(max(image.width, image.height))
@@ -79,65 +82,124 @@ nonisolated enum PageGeometry {
         let h = max(1, Int(Double(image.height) * min(1, scale)))
         guard w >= 40, h >= 40 else { return nil }
 
-        var pixels = [UInt8](repeating: 0, count: w * h)
-        let rendered = pixels.withUnsafeMutableBytes { raw -> Bool in
+        var rgbx = [UInt8](repeating: 0, count: w * h * 4)
+        let rendered = rgbx.withUnsafeMutableBytes { raw -> Bool in
             guard
                 let context = CGContext(
                     data: raw.baseAddress, width: w, height: h,
-                    bitsPerComponent: 8, bytesPerRow: w,
-                    space: CGColorSpaceCreateDeviceGray(),
-                    bitmapInfo: CGImageAlphaInfo.none.rawValue)
+                    bitsPerComponent: 8, bytesPerRow: w * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
             else { return false }
             context.interpolationQuality = .medium
             context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
             return true
         }
         guard rendered else { return nil }
-        // Row 0 is the top of the frame — the sheet's leading edge.
-        func value(_ x: Int, _ y: Int) -> Int { Int(pixels[y * w + x]) }
+        // Brightness, and how far each pixel leans red or blue of green —
+        // zero for anything gray. Row 0 is the top of the frame, the
+        // sheet's leading edge.
+        var luma = [UInt8](repeating: 0, count: w * h)
+        var redLean = [Int16](repeating: 0, count: w * h)
+        var blueLean = [Int16](repeating: 0, count: w * h)
+        for i in 0..<(w * h) {
+            let r = Int(rgbx[4 * i]), g = Int(rgbx[4 * i + 1]), b = Int(rgbx[4 * i + 2])
+            luma[i] = UInt8((299 * r + 587 * g + 114 * b) / 1000)
+            redLean[i] = Int16(r - g)
+            blueLean[i] = Int16(b - g)
+        }
 
-        // The paper is the brightest thing in the frame. Even a business card
-        // fed at Letter size covers far more than the top 1%.
-        let paper = percentile(pixels, 0.99)
-
-        // Each side's outermost band, and whether it's background.
-        enum Side: CaseIterable { case left, right, top, bottom }
-        let band = max(3, maxDimension / 40)
-        func bandValues(_ side: Side) -> [UInt8] {
-            switch side {
-            case .left: (0..<h).flatMap { y in (0..<band).map { pixels[y * w + $0] } }
-            case .right: (0..<h).flatMap { y in ((w - band)..<w).map { pixels[y * w + $0] } }
-            case .top: Array(pixels[0..<(band * w)])
-            case .bottom: Array(pixels[((h - band) * w)...])
+        struct Tone {
+            var level: Int
+            var red: Int
+            var blue: Int
+            func differs(from other: Tone, by margin: Int) -> Bool {
+                abs(level - other.level) > margin || abs(red - other.red) > margin
+                    || abs(blue - other.blue) > margin
             }
         }
-        var background: [Side: Int] = [:]
+        /// The middle brightness and lean of a set of pixels, by histogram.
+        func tone(of indices: [Int]) -> Tone {
+            var levels = [Int](repeating: 0, count: 256)
+            var reds = [Int](repeating: 0, count: 511)
+            var blues = [Int](repeating: 0, count: 511)
+            for i in indices {
+                levels[Int(luma[i])] += 1
+                reds[Int(redLean[i]) + 255] += 1
+                blues[Int(blueLean[i]) + 255] += 1
+            }
+            func middle(_ histogram: [Int]) -> Int {
+                var running = 0
+                for (bin, count) in histogram.enumerated() {
+                    running += count
+                    if running * 2 > indices.count { return bin }
+                }
+                return histogram.count - 1
+            }
+            return Tone(level: middle(levels), red: middle(reds) - 255, blue: middle(blues) - 255)
+        }
+
+        // The brightest paper in the frame — a card fed at Letter size still
+        // covers far more than the top 1% — and the middle of the frame,
+        // which a sheet of any size or colour mostly covers.
+        let paper = percentile(luma, 0.99)
+        let middle = tone(
+            of: (h / 4..<(3 * h / 4)).flatMap { y in (w / 4..<(3 * w / 4)).map { y * w + $0 } })
+
+        // Each side's outermost band, and whether it's backing.
+        enum Side: CaseIterable { case left, right, top, bottom }
+        let band = max(3, maxDimension / 40)
+        func bandIndices(_ side: Side) -> [Int] {
+            switch side {
+            case .left: (0..<h).flatMap { y in (0..<band).map { y * w + $0 } }
+            case .right: (0..<h).flatMap { y in ((w - band)..<w).map { y * w + $0 } }
+            case .top: Array(0..<(band * w))
+            case .bottom: Array(((h - band) * w)..<(h * w))
+            }
+        }
+        var background: [Side: Tone] = [:]
         for side in Side.allCases {
-            let values = bandValues(side)
-            let level = percentile(values, 0.5)
+            let indices = bandIndices(side)
+            let band = tone(of: indices)
             // Plain: nearly all of it within a few levels of its middle —
             // which a band crossing the sheet's edge, or print, is not.
-            let plain = values.filter { abs(Int($0) - level) <= 8 }.count
-            if paper - level >= 10, plain * 100 >= values.count * 85 {
-                background[side] = level
+            let plain = indices.filter { abs(Int(luma[$0]) - band.level) <= 8 }.count
+            // The backing is a light, neutral gray.
+            let looksLikeBacking = band.level >= 160 && abs(band.red) <= 8 && abs(band.blue) <= 8
+            // And it isn't the sheet: either darker than the paper, or unlike
+            // what fills the middle of the frame.
+            let apart = paper - band.level >= 10 || band.differs(from: middle, by: 10)
+            if looksLikeBacking, apart, plain * 100 >= indices.count * 85 {
+                background[side] = band
             }
         }
         // At least two sides showing the same backing.
-        let levels = background.values.sorted()
-        guard levels.count >= 2, let backing = levels.first(where: { level in
-            levels.filter { abs($0 - level) <= 8 }.count >= 2
+        let candidates = background.values.map(\.level).sorted()
+        guard candidates.count >= 2, let level = candidates.first(where: { level in
+            candidates.filter { abs($0 - level) <= 8 }.count >= 2
         }) else { return nil }
-        background = background.filter { abs($0.value - backing) <= 8 }
+        background = background.filter { abs($0.value.level - level) <= 8 }
+        let sides = Array(background.values)
+        let backing = Tone(
+            level: level,
+            red: sides.map(\.red).reduce(0, +) / sides.count,
+            blue: sides.map(\.blue).reduce(0, +) / sides.count)
 
-        // Paper is whatever is brighter than halfway from backing to paper;
-        // print on it isn't, so extents go by the share of paper in each
+        // The sheet: brighter than the backing, or another colour. Darker
+        // gray is the sheet's shadow (or print, which paper around it
+        // already counts for), so extents go by the share of sheet in each
         // column and row rather than by any single pixel.
-        let threshold = (backing + paper) / 2
+        func isSheet(_ x: Int, _ y: Int) -> Bool {
+            let i = y * w + x
+            return Int(luma[i]) - backing.level > 10
+                || abs(Int(redLean[i]) - backing.red) > 10
+                || abs(Int(blueLean[i]) - backing.blue) > 10
+        }
         func columnShare(_ x: Int, _ rows: Range<Int>) -> Double {
-            Double(rows.filter { value(x, $0) > threshold }.count) / Double(rows.count)
+            Double(rows.filter { isSheet(x, $0) }.count) / Double(rows.count)
         }
         func rowShare(_ y: Int, _ columns: Range<Int>) -> Double {
-            Double(columns.filter { value($0, y) > threshold }.count) / Double(columns.count)
+            Double(columns.filter { isSheet($0, y) }.count) / Double(columns.count)
         }
         func extent(
             _ count: Int, low: Side, high: Side, minimumShare: Double,
