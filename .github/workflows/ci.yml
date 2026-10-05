@@ -48,7 +48,13 @@ jobs:
             -project SnapScan.xcodeproj \
             -scheme SnapScan \
             CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
-            | tail -60
+            | tee "$RUNNER_TEMP/test.log" | tail -60
+
+      # The tail above keeps the summary but cuts the per-test issue lines;
+      # on a failure, show those.
+      - name: Test issues
+        if: failure()
+        run: grep -E "recorded an issue|XCTAssert|error:" "$RUNNER_TEMP/test.log"
 
       - name: Package build artifact
         run: |
