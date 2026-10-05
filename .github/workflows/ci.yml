@@ -54,7 +54,7 @@ jobs:
       # on a failure, show those.
       - name: Test issues
         if: failure()
-        run: grep -E "recorded an issue|XCTAssert|error:" "$RUNNER_TEMP/test.log"
+        run: grep -E "recorded an issue|XCTAssert" "$RUNNER_TEMP/test.log"
 
       - name: Package build artifact
         run: |

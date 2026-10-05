@@ -8,7 +8,7 @@ import Testing
     /// has. The assertion is deliberately loose — the on-device model isn't
     /// present everywhere (CI included), where the heading heuristic answers
     /// instead — but both paths have to produce a usable filename.
-    @Test func namesARenderedBill() async throws {
+    @Test(.needsTextRecognition) func namesARenderedBill() async throws {
         let suggestion = await NameSuggester.suggest(for: [renderBillPage()])
         print("suggested name: \(suggestion ?? "<none>")")
         let name = try #require(suggestion)

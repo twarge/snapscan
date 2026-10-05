@@ -1,5 +1,6 @@
 import AppKit
 import Testing
+import Vision
 
 @testable import SnapScan
 
@@ -96,7 +97,7 @@ import Testing
         #expect(rotation == 0)
     }
 
-    @Test(arguments: [90, 180, 270])
+    @Test(.needsTextRecognition, arguments: [90, 180, 270])
     func detectsRotation(applied: Int) async throws {
         let rotated = try #require(renderTextPage().rotated(byDegreesClockwise: applied))
         let correction = await OrientationDetector.rotationToUpright(for: rotated)
@@ -122,7 +123,7 @@ import Testing
 
     // MARK: Deskew
 
-    @Test func skewEstimateAndCorrectionRoundTrip() async throws {
+    @Test(.needsTextRecognition) func skewEstimateAndCorrectionRoundTrip() async throws {
         let upright = renderTextPage()
         let skewed = try #require(upright.rotatedBySmallAngle(degreesClockwise: 2.0))
         let correction = try #require(
@@ -168,4 +169,33 @@ import Testing
         let estimate = await OrientationDetector.skewCorrectionDegrees(for: skewedSparse)
         #expect(estimate == nil, "sparse pages must be left alone even when actually skewed")
     }
+}
+
+// MARK: Text recognition availability
+
+extension Trait where Self == ConditionTrait {
+    /// For tests that need Vision to read rendered text. It does on a Mac, but
+    /// on GitHub's macOS 27 runner VMs (the xcode-27 image) it recognizes
+    /// nothing, so those tests skip there. The probe calls Vision directly,
+    /// not SnapScan, so a regression in the app still fails wherever Vision
+    /// reads text.
+    static var needsTextRecognition: Self {
+        .enabled("Vision recognizes no text on this machine") { await visionReadsText() }
+    }
+}
+
+private func visionReadsText() async -> Bool {
+    let context = CGContext(
+        data: nil, width: 400, height: 100, bitsPerComponent: 8,
+        bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(),
+        bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+    context.setFillColor(gray: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 400, height: 100))
+    let font = CTFontCreateWithName("Helvetica" as CFString, 36, nil)
+    let line = CTLineCreateWithAttributedString(
+        NSAttributedString(string: "Riverside Road", attributes: [.font: font]))
+    context.textPosition = CGPoint(x: 20, y: 35)
+    CTLineDraw(line, context)
+    let observations = (try? await RecognizeTextRequest().perform(on: context.makeImage()!)) ?? []
+    return !observations.isEmpty
 }

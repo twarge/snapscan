@@ -135,7 +135,7 @@ import Testing
 
     /// The whole chain on a real page: recognize it, write the layer, search
     /// the result. Catches coordinate mistakes that hand-built boxes can't.
-    @Test func recognizedTextRoundTripsIntoASearchablePDF() async throws {
+    @Test(.needsTextRecognition) func recognizedTextRoundTripsIntoASearchablePDF() async throws {
         let width = 1275
         let height = 1650
         let context = CGContext(
