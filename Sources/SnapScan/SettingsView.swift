@@ -49,6 +49,7 @@ struct SettingsView: View {
                 LabeledContent("Scans folder") {
                     HStack(spacing: 6) {
                         TextField("Folder", text: $engine.settings.destinationPath)
+                            .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                             .frame(minWidth: 220)
                         Button {
@@ -116,8 +117,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
+        // The grouped Form scrolls on its own, so the window can be any
+        // height; the Settings scene sets the size it opens at.
+        .frame(minWidth: 480, minHeight: 320)
+        .background(ResizableWindow())
         .onChange(of: engine.settings.menuBarOnly) { _, menuBarOnly in
             NSApp.setActivationPolicy(menuBarOnly ? .accessory : .regular)
             MenuBarController.shared.setVisible(menuBarOnly)
@@ -159,4 +162,20 @@ struct SettingsView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         engine.setDestination(url)
     }
+}
+
+/// SwiftUI never gives the Settings window a resize edge, whatever its
+/// resizability, so this turns one on for the window it lands in.
+private struct ResizableWindow: NSViewRepresentable {
+    func makeNSView(context: Context) -> ResizableWindowView { ResizableWindowView() }
+    func updateNSView(_ view: ResizableWindowView, context: Context) {}
+}
+
+private final class ResizableWindowView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.styleMask.insert(.resizable)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -90,6 +90,8 @@ struct SnapScanApp: App {
             SettingsView()
                 .environment(engine)
         }
+        .defaultSize(width: 520, height: 620)
+        .windowResizability(.contentMinSize)
 
     }
 }
