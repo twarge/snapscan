@@ -1,6 +1,8 @@
-// Bring-up check for the native (non-SANE) scanner driver: opens the
-// scanner over IOUSBHost, runs TEST UNIT READY, INQUIRY, the vendor
-// capability page, and a sensor read, printing what comes back.
+// Bring-up check for the native (non-SANE) scanner driver: identifies the
+// attached scanner the way Help ▸ Scanner Diagnostics does — USB details,
+// TEST UNIT READY, INQUIRY, the vendor capability page, the mode pages read
+// back, a sensor read — and prints the same report. `--setup` also sends
+// the setup sequence step by step.
 //
 // The scanner must be free — quit SnapScan first, since a claimed
 // interface is exclusive.
@@ -12,77 +14,40 @@ import UniformTypeIdentifiers
 // Unbuffered, so a hang leaves a usable trail when output is redirected.
 setvbuf(stdout, nil, _IONBF, 0)
 
-let vendorID = 0x04C5
-let productID = 0x132B
-
 func fail(_ message: String) -> Never {
     print("FAIL: \(message)")
     exit(1)
 }
 
-guard USBTransport.isPresent(vendorID: vendorID, productID: productID) else {
-    fail("scanner not on USB — is it plugged in with the flap open?")
+guard NativeScanner.isPresent() else {
+    fail("no scanner on USB — is it plugged in with the flap open?")
 }
-print("device present on USB")
 
-// Scoped so the interface is released before the scan section claims it —
-// only one claim on the interface can exist at a time.
-func runDiagnostics() {
-    let transport: USBTransport
-    do {
-        transport = try USBTransport(vendorID: vendorID, productID: productID)
-    } catch {
-        fail("open: \(error.localizedDescription)")
+// Detached: top-level code is main-actor isolated, so an inheriting Task
+// would deadlock against the semaphore wait below.
+let identified = DispatchSemaphore(value: 0)
+nonisolated(unsafe) var isScanner = false
+Task.detached {
+    defer { identified.signal() }
+    let recorder = TransferRecorder()
+    await NativeScanner.shared.setRecorder(recorder)
+    var report = DiagnosticReport.current()
+    report.identification = await NativeScanner.shared.identify()
+    if CommandLine.arguments.contains("--setup") {
+        recorder.begin(step: "setup check")
+        var settings = ScanSettings()
+        settings.source = .front
+        settings.paperSize = .letter
+        report.setup = await NativeScanner.shared.checkSetup(
+            settings: settings, windows: [.front])
     }
-    print("interface claimed, bulk pipes open")
-
-// TEST UNIT READY — no data phase.
-do {
-    let (status, _) = try transport.send(cdb: ScannerCommands.testUnitReady())
-    print("TEST UNIT READY: \(status)")
-} catch {
-    fail("TEST UNIT READY: \(error.localizedDescription)")
+    await NativeScanner.shared.setRecorder(nil)
+    report.transcript = recorder.transcript
+    print(report.text)
+    isScanner = report.identification?.isScanner == true
 }
-
-// INQUIRY — the identity check.
-do {
-    let (status, data) = try transport.send(
-        cdb: ScannerCommands.inquiry(), dataIn: 96)
-    guard let identity = ScannerCommands.parseInquiry(data) else {
-        fail("INQUIRY returned \(data.count) bytes, could not parse")
-    }
-    print(
-        "INQUIRY: \(status) — \(identity.vendor) \(identity.model) "
-            + "(device type 0x\(String(identity.deviceType, radix: 16)))")
-    guard identity.deviceType == 0x06 else {
-        fail("expected SCSI device type 0x06 (scanner)")
-    }
-} catch {
-    fail("INQUIRY: \(error.localizedDescription)")
-}
-
-// Vendor capability page.
-do {
-    let (status, data) = try transport.send(
-        cdb: ScannerCommands.inquiryVendorPage(), dataIn: 204)
-    print("INQUIRY page 0xF0: \(status), \(data.count) bytes")
-    print("  first 16: \(data.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " "))")
-} catch {
-    fail("vendor INQUIRY: \(error.localizedDescription)")
-}
-
-// Sensors (vendor 0xC2) — the Scan button lives in here.
-do {
-    let (status, data) = try transport.send(
-        cdb: ScannerCommands.hardwareStatus(), dataIn: 12)
-    print("hardware status: \(status)")
-    print("  bytes: \(data.map { String(format: "%02x", $0) }.joined(separator: " "))")
-} catch {
-    fail("hardware status: \(error.localizedDescription)")
-}
-}
-
-runDiagnostics()
+identified.wait()
+guard isScanner else { fail("the device did not identify itself as a scanner") }
 
 // Sensor mapping aid: poll the vendor 0xC2 block and print it whenever it
 // changes, so physical actions (press Scan, load paper, open the cover)

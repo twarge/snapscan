@@ -28,7 +28,7 @@ nonisolated final class USBTransport {
         case deviceNotFound
         case interfaceNotFound
         case openFailed(String)
-        case pipeNotFound(UInt8)
+        case pipeNotFound(UInt8, found: [UInt8])
         case shortStatus(Int)
         case badStatusTag(UInt8)
         case io(String)
@@ -38,8 +38,13 @@ nonisolated final class USBTransport {
             case .deviceNotFound: "Scanner not found on USB"
             case .interfaceNotFound: "Scanner interface not available"
             case .openFailed(let detail): detail
-            case .pipeNotFound(let address):
+            case .pipeNotFound(let address, let found):
                 String(format: "Scanner endpoint 0x%02x not found", address)
+                    + " (it has "
+                    + (found.isEmpty
+                        ? "none"
+                        : found.map { String(format: "0x%02x", $0) }.joined(separator: ", "))
+                    + ")"
             case .shortStatus(let count): "Truncated status packet (\(count) bytes)"
             case .badStatusTag(let tag):
                 String(format: "Unexpected status tag 0x%02x", tag)
@@ -83,6 +88,21 @@ nonisolated final class USBTransport {
     private var outPipe: UInt8 = 0
     private var inPipe: UInt8 = 0
     private let timeoutMilliseconds: UInt32 = 30_000
+
+    /// One endpoint of the claimed interface, as the device describes it.
+    struct Pipe: Sendable {
+        let address: UInt8
+        /// USB transfer type: 0 control, 1 isochronous, 2 bulk, 3 interrupt.
+        let transferType: UInt8
+        let maxPacketSize: Int
+    }
+
+    /// Every endpoint the interface offers, found when it is claimed.
+    private(set) var pipes: [Pipe] = []
+
+    /// When set, every exchange is reported to it — the diagnostics report's
+    /// transcript.
+    var recorder: TransferRecorder?
 
     // MARK: - Discovery
 
@@ -152,6 +172,11 @@ nonisolated final class USBTransport {
     }
 
     /// Maps endpoint addresses to IOUSBLib's 1-based pipe references.
+    ///
+    /// The addresses in docs/PROTOCOL.md §2 are preferred. A model that puts
+    /// its bulk pair elsewhere gets the first bulk endpoint each way instead:
+    /// the framing needs exactly one of each, and nothing else on the
+    /// interface could carry it.
     private func findPipes() throws {
         var endpointCount: UInt8 = 0
         guard
@@ -159,6 +184,8 @@ nonisolated final class USBTransport {
                 == kIOReturnSuccess
         else { throw TransportError.interfaceNotFound }
 
+        var firstBulkOut: UInt8 = 0
+        var firstBulkIn: UInt8 = 0
         for pipe in 1...max(endpointCount, 1) {
             var direction: UInt8 = 0
             var number: UInt8 = 0
@@ -172,12 +199,29 @@ nonisolated final class USBTransport {
             else { continue }
             // direction: 0 = out, 1 = in (kUSBOut / kUSBIn)
             let address = UInt8(number) | (direction == 1 ? 0x80 : 0x00)
+            pipes.append(
+                Pipe(
+                    address: address, transferType: transferType,
+                    maxPacketSize: Int(maxPacketSize)))
             if address == Self.bulkOutAddress { outPipe = pipe }
             if address == Self.bulkInAddress { inPipe = pipe }
+            if transferType == Self.bulkTransferType {
+                if direction == 1, firstBulkIn == 0 { firstBulkIn = pipe }
+                if direction == 0, firstBulkOut == 0 { firstBulkOut = pipe }
+            }
         }
-        guard outPipe != 0 else { throw TransportError.pipeNotFound(Self.bulkOutAddress) }
-        guard inPipe != 0 else { throw TransportError.pipeNotFound(Self.bulkInAddress) }
+        if outPipe == 0 { outPipe = firstBulkOut }
+        if inPipe == 0 { inPipe = firstBulkIn }
+        let found = pipes.map(\.address)
+        guard outPipe != 0 else {
+            throw TransportError.pipeNotFound(Self.bulkOutAddress, found: found)
+        }
+        guard inPipe != 0 else {
+            throw TransportError.pipeNotFound(Self.bulkInAddress, found: found)
+        }
     }
+
+    private static let bulkTransferType: UInt8 = 2
 
     /// Finds a candidate scanner interface from this vendor, along with the
     /// product ID of the device it belongs to.
@@ -193,6 +237,17 @@ nonisolated final class USBTransport {
     private static func findInterfaceService(
         vendorID: Int, preferredProductID: Int?
     ) -> (service: io_service_t, productID: Int)? {
+        guard let found = findDevice(vendorID: vendorID, preferredProductID: preferredProductID)
+        else { return nil }
+        IOObjectRelease(found.device)
+        return (found.interface, found.productID)  // caller releases
+    }
+
+    /// The device `findInterfaceService` settles on, with its interface. The
+    /// caller releases both.
+    private static func findDevice(
+        vendorID: Int, preferredProductID: Int?
+    ) -> (device: io_service_t, interface: io_service_t, productID: Int)? {
         // Deliberately unfiltered. IOUSBHostDevice honours only particular
         // *combinations* of matching properties, and vendor on its own is not
         // one of them: a dictionary carrying just idVendor matches nothing at
@@ -207,19 +262,26 @@ nonisolated final class USBTransport {
         else { return nil }
         defer { IOObjectRelease(deviceIterator) }
 
-        var fallback: (service: io_service_t, productID: Int)?
+        var fallback: (device: io_service_t, interface: io_service_t, productID: Int)?
         while case let device = IOIteratorNext(deviceIterator), device != 0 {
-            defer { IOObjectRelease(device) }
-            guard numberProperty(device, "idVendor") == vendorID else { continue }
-            guard let interface = firstInterface(of: device) else { continue }
+            guard numberProperty(device, "idVendor") == vendorID,
+                let interface = firstInterface(of: device)
+            else {
+                IOObjectRelease(device)
+                continue
+            }
             let productID = numberProperty(device, "idProduct") ?? 0
             if productID == preferredProductID {
-                if let fallback { IOObjectRelease(fallback.service) }
-                return (interface, productID)  // caller releases
+                if let fallback {
+                    IOObjectRelease(fallback.device)
+                    IOObjectRelease(fallback.interface)
+                }
+                return (device, interface, productID)
             }
             if fallback == nil {
-                fallback = (interface, productID)
+                fallback = (device, interface, productID)
             } else {
+                IOObjectRelease(device)
                 IOObjectRelease(interface)
             }
         }
@@ -261,6 +323,49 @@ nonisolated final class USBTransport {
         return found.productID
     }
 
+    /// What the USB registry says about an attached candidate, without
+    /// claiming it — for the diagnostics report. The serial number is
+    /// deliberately not read.
+    struct DeviceDescription: Sendable {
+        let vendorID: Int
+        let productID: Int
+        /// `bcdDevice`: the device's release number, often its firmware.
+        let release: Int?
+        let vendorName: String?
+        let productName: String?
+        /// 0 low, 1 full, 2 high, 3 super, 4 super+ (IOKit's numbering).
+        let speed: Int?
+        let interfaceClass: Int?
+        let interfaceSubclass: Int?
+        let interfaceProtocol: Int?
+    }
+
+    static func describe(vendorID: Int, preferredProductID: Int?) -> DeviceDescription? {
+        guard
+            let found = findDevice(vendorID: vendorID, preferredProductID: preferredProductID)
+        else { return nil }
+        defer {
+            IOObjectRelease(found.device)
+            IOObjectRelease(found.interface)
+        }
+        func string(_ key: String) -> String? {
+            IORegistryEntryCreateCFProperty(
+                found.device, key as CFString, kCFAllocatorDefault, 0)?
+                .takeRetainedValue() as? String
+        }
+        return DeviceDescription(
+            vendorID: vendorID,
+            productID: found.productID,
+            release: numberProperty(found.device, "bcdDevice"),
+            vendorName: string("USB Vendor Name") ?? string("kUSBVendorString"),
+            productName: string("USB Product Name") ?? string("kUSBProductString"),
+            speed: numberProperty(found.device, "Device Speed")
+                ?? numberProperty(found.device, "USBSpeed"),
+            interfaceClass: numberProperty(found.interface, "bInterfaceClass"),
+            interfaceSubclass: numberProperty(found.interface, "bInterfaceSubClass"),
+            interfaceProtocol: numberProperty(found.interface, "bInterfaceProtocol"))
+    }
+
     // MARK: - Framing
 
     /// Sends a command and returns its status, transferring `dataOut` or
@@ -269,19 +374,50 @@ nonisolated final class USBTransport {
     func send(cdb: [UInt8], dataOut: Data? = nil, dataIn: Int = 0) throws -> (
         status: CommandStatus, data: Data
     ) {
-        try writeCommandPacket(cdb: cdb)
-
-        if let dataOut, !dataOut.isEmpty {
-            try write(dataOut)
-        }
-
+        let started = ContinuousClock.now
         var received = Data()
-        if dataIn > 0 {
-            received = try read(maxLength: dataIn)
-        }
+        var statusPacket = Data()
+        do {
+            try writeCommandPacket(cdb: cdb)
 
-        let status = try readStatusPacket()
-        return (status, received)
+            if let dataOut, !dataOut.isEmpty {
+                try write(dataOut)
+            }
+
+            if dataIn > 0 {
+                received = try read(maxLength: dataIn)
+            }
+
+            if Self.isStatusPacket(received, inPlaceOf: dataIn) {
+                // The device answered with its status where the data belonged:
+                // it had no data to send. Reading on for a status would wait
+                // out the timeout and leave the next command out of step.
+                statusPacket = received
+                received = Data()
+            } else {
+                statusPacket = try read(maxLength: Self.statusPacketLength)
+            }
+            let status = try Self.commandStatus(from: statusPacket)
+            recorder?.record(
+                cdb: cdb, dataOut: dataOut, requested: dataIn, received: received,
+                statusPacket: statusPacket, error: nil,
+                elapsed: ContinuousClock.now - started)
+            return (status, received)
+        } catch {
+            recorder?.record(
+                cdb: cdb, dataOut: dataOut, requested: dataIn, received: received,
+                statusPacket: statusPacket, error: error,
+                elapsed: ContinuousClock.now - started)
+            throw error
+        }
+    }
+
+    /// True when a data-in read caught a status packet instead. No command
+    /// this driver sends asks for exactly a status packet's length, so a
+    /// 13-byte reply tagged `S` to a longer request can only be that.
+    static func isStatusPacket(_ data: Data, inPlaceOf requested: Int) -> Bool {
+        requested != statusPacketLength && data.count == statusPacketLength
+            && data.first == statusTag
     }
 
     private func writeCommandPacket(cdb: [UInt8]) throws {
@@ -292,15 +428,14 @@ nonisolated final class USBTransport {
         try write(Data(packet))
     }
 
-    private func readStatusPacket() throws -> CommandStatus {
-        let status = try read(maxLength: Self.statusPacketLength)
-        guard status.count >= Self.statusFlagOffset + 1 else {
+    private static func commandStatus(from status: Data) throws -> CommandStatus {
+        guard status.count >= statusFlagOffset + 1 else {
             throw TransportError.shortStatus(status.count)
         }
-        guard status[status.startIndex] == Self.statusTag else {
+        guard status[status.startIndex] == statusTag else {
             throw TransportError.badStatusTag(status[status.startIndex])
         }
-        return CommandStatus(byte: status[status.startIndex + Self.statusFlagOffset])
+        return CommandStatus(byte: status[status.startIndex + statusFlagOffset])
     }
 
     // MARK: - Raw pipe access

@@ -7,6 +7,9 @@ Apache-licensed driver (see CLEANROOM-STUDY.md for method and rationale).
 
 - **[capture]** — observed directly in our own USB captures of this
   scanner (`docs/captures/`, recorded with `scripts/capture-session.sh`).
+  Reports from the app's Help ▸ Scanner Diagnostics are captures of the
+  same standing: the app's own exchanges with a scanner, recorded as they
+  happen.
 - **[SCSI-2]** — the published SCSI-2 standard (X3.131-1994), whose
   scanner device class defines most commands and data formats here.
 - **[open]** — not yet established; needs a capture or experiment.

@@ -36,6 +36,7 @@ extension FocusedValues {
 
 struct SnapScanCommands: Commands {
     @FocusedValue(\.scanActions) private var actions
+    @Environment(\.openWindow) private var openWindow
     /// The same key the page grid reads, so the menu and a pinch agree.
     @AppStorage("thumbnailSize") private var thumbnailSize = 160.0
 
@@ -104,6 +105,8 @@ struct SnapScanCommands: Commands {
                     NSWorkspace.shared.open(url)
                 }
             }
+            Divider()
+            Button("Scanner Diagnostics…") { DiagnosticsView.open(with: openWindow) }
         }
     }
 }

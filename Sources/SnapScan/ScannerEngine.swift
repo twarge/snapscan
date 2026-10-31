@@ -12,6 +12,8 @@ final class ScannerEngine {
         case detecting
         case scanning(page: Int)
         case noScanner
+        /// The diagnostics window has the scanner.
+        case diagnosing
     }
 
     var status: Status = .idle
@@ -117,9 +119,29 @@ final class ScannerEngine {
     /// does not count — new scans may start over it).
     var isBusy: Bool {
         switch status {
-        case .detecting, .scanning: true
+        case .detecting, .scanning, .diagnosing: true
         default: false
         }
+    }
+
+    // MARK: - Diagnostics
+
+    /// Hands the scanner to the diagnostics window. Until `endDiagnostics`,
+    /// nothing else uses it — not a scan, not the button watch (a press asked
+    /// for there must not start a real scan), not re-detection. False when a
+    /// scan already holds it.
+    func beginDiagnostics() -> Bool {
+        guard !isBusy else { return false }
+        status = .diagnosing
+        return true
+    }
+
+    /// Takes the scanner back and looks at it afresh: diagnostics may have
+    /// dropped and reclaimed the connection along the way.
+    func endDiagnostics() async {
+        guard status == .diagnosing else { return }
+        status = scannerPresent ? .idle : .noScanner
+        await detectScanner()
     }
 
     /// True while any document still has pages being straightened.

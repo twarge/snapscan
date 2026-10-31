@@ -180,6 +180,14 @@ and uses the async Swift Vision API.
 - `Sources/SnapScan/NativeScanner.swift` — the scan pipeline: device
   setup, feed, streaming reads with live partial pages, duplex window
   alternation, and end-of-page handling.
+- `Sources/SnapScan/ScannerDiagnostics.swift` and `DiagnosticsView.swift`
+  — Help ▸ Scanner Diagnostics (also in Settings): a guided run that
+  records every USB exchange with the attached scanner (identity, mode
+  pages read back, the Scan button and paper sensors, each setup step on
+  its own, a test scan that goes on past refused steps) and saves a
+  plain-text report into the scans folder. Image transfers are kept to
+  their first 16 bytes; the test page is added only if the person running
+  it asks. `make probe` prints the same report from the command line.
 - `Sources/SnapScan/ScannerEngine.swift` — app-facing state machine:
   document lifecycle, direct-save, post-processing, and the hardware-button
   watch (reading the Scan-button sensor over the open USB connection).
@@ -262,4 +270,5 @@ KIND. SnapScan bundles no third-party code.
   shares this protocol: the app matches on vendor, then asks the device
   what it is, and drives it only if SCSI INQUIRY reports a scanner. An
   untested model is labelled as such next to its name — it may work
-  completely, partly, or not at all.
+  completely, partly, or not at all. For such a model, Help ▸ Scanner
+  Diagnostics makes the report its support would be written from.

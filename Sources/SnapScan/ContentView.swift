@@ -177,6 +177,7 @@ struct ContentView: View {
         case .detecting: "Looking for scanner…"
         case .scanning(let page): "Scanning page \(page)…"
         case .noScanner: "Scanner not connected"
+        case .diagnosing: "Running scanner diagnostics…"
         case .idle:
             if engine.isSaving {
                 "Saving…"

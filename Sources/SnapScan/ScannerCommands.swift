@@ -13,12 +13,41 @@ nonisolated enum ScannerCommands {
         case modeSelect = 0x15
         case modeSense = 0x1A
         case scan = 0x1B
+        case readDiagnostic = 0x1C
+        case sendDiagnostic = 0x1D
         case setWindow = 0x24
         case read = 0x28
         case send = 0x2A
         case objectPosition = 0x31
         case hardwareStatus = 0xC2  // vendor
         case scannerControl = 0xF1  // vendor
+
+        /// How a transcript names the command.
+        var name: String {
+            switch self {
+            case .testUnitReady: "TEST UNIT READY"
+            case .requestSense: "REQUEST SENSE"
+            case .inquiry: "INQUIRY"
+            case .modeSelect: "MODE SELECT"
+            case .modeSense: "MODE SENSE"
+            case .scan: "SCAN"
+            case .readDiagnostic: "READ DIAGNOSTIC"
+            case .sendDiagnostic: "SEND DIAGNOSTIC"
+            case .setWindow: "SET WINDOW"
+            case .read: "READ"
+            case .send: "SEND"
+            case .objectPosition: "OBJECT POSITION"
+            case .hardwareStatus: "HARDWARE STATUS"
+            case .scannerControl: "SCANNER CONTROL"
+            }
+        }
+    }
+
+    /// The command a CDB carries, by name; an opcode this driver doesn't
+    /// send is shown by its number.
+    static func name(of cdb: [UInt8]) -> String {
+        guard let opcode = cdb.first else { return "(empty)" }
+        return Opcode(rawValue: opcode)?.name ?? String(format: "opcode 0x%02x", opcode)
     }
 
     /// READ data type codes (CDB byte 2).
@@ -83,16 +112,23 @@ nonisolated enum ScannerCommands {
     }
 
     static func sendDiagnostic(parameterLength: Int) -> [UInt8] {
-        [0x1D, 0, 0, 0, UInt8(parameterLength), 0]
+        [Opcode.sendDiagnostic.rawValue, 0, 0, 0, UInt8(parameterLength), 0]
     }
 
     static func readDiagnostic(allocationLength: Int) -> [UInt8] {
-        [0x1C, 0, 0, 0, UInt8(allocationLength), 0]
+        [Opcode.readDiagnostic.rawValue, 0, 0, 0, UInt8(allocationLength), 0]
     }
 
     static func modeSelect(parameterLength: Int) -> [UInt8] {
         // PF bit set (byte 1 = 0x10), parameter list length in byte 4.
         [Opcode.modeSelect.rawValue, 0x10, 0, 0, UInt8(parameterLength), 0]
+    }
+
+    /// MODE SENSE(6) for one page's current values, per SCSI-2: page code in
+    /// byte 2 (page control 0, current), allocation length in byte 4. Read
+    /// only, so it is safe to ask of a model whose pages are unknown.
+    static func modeSense(page: UInt8, allocationLength: Int = 0x40) -> [UInt8] {
+        [Opcode.modeSense.rawValue, 0, page & 0x3F, 0, UInt8(allocationLength), 0]
     }
 
     /// SEND with a vendor data type (byte 2), used for the table download.
@@ -343,9 +379,11 @@ nonisolated enum ScannerCommands {
 
     // MARK: - Response parsing
 
-    struct Identity {
+    struct Identity: Sendable {
         let vendor: String
         let model: String
+        /// Product revision level (bytes 32–35), usually the firmware.
+        let revision: String
         /// SCSI peripheral device type; 0x06 is a scanner.
         let deviceType: UInt8
     }
@@ -358,7 +396,9 @@ nonisolated enum ScannerCommands {
                 .trimmingCharacters(in: .whitespaces) ?? ""
         }
         return Identity(
-            vendor: text(8..<16), model: text(16..<32), deviceType: bytes[0] & 0x1F)
+            vendor: text(8..<16), model: text(16..<32),
+            revision: bytes.count >= 36 ? text(32..<36) : "",
+            deviceType: bytes[0] & 0x1F)
     }
 
     /// The pixel-size read (type 0x80) reports width and line count as

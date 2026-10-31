@@ -165,7 +165,7 @@ struct MenuBarPanelView: View {
     @ViewBuilder
     private var statusIcon: some View {
         switch engine.status {
-        case .detecting, .scanning:
+        case .detecting, .scanning, .diagnosing:
             ProgressView().controlSize(.small)
         case .noScanner:
             Image(systemName: "exclamationmark.triangle.fill")
@@ -185,6 +185,7 @@ struct MenuBarPanelView: View {
         case .detecting: "Looking for scanner…"
         case .scanning(let page): "Scanning page \(page)…"
         case .noScanner: "Scanner not found"
+        case .diagnosing: "Running scanner diagnostics…"
         case .idle:
             engine.isProcessingAnywhere
                 ? "Straightening…"

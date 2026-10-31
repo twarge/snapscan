@@ -4,6 +4,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(ScannerEngine.self) private var engine
+    @Environment(\.openWindow) private var openWindow
     @State private var loginItemError: String?
 
     var body: some View {
@@ -114,6 +115,17 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+            }
+            Section("Diagnostics") {
+                LabeledContent("Scanner diagnostics") {
+                    Button("Open…") { DiagnosticsView.open(with: openWindow) }
+                }
+                Text(
+                    "Records how your scanner responds and saves a report to send in — for a "
+                        + "scanner SnapScan calls untested, or one that isn't working."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

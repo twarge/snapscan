@@ -38,6 +38,9 @@ actor NativeScanner {
     struct BatchResult: Sendable {
         let pagesScanned: Int
         let feederWasEmpty: Bool
+        /// Setup steps the scanner refused and a lenient batch went on
+        /// without; always empty otherwise.
+        var skippedSetupSteps: [String] = []
     }
 
     enum ScanError: Error, LocalizedError {
@@ -45,6 +48,10 @@ actor NativeScanner {
         case notAScanner
         case unexpectedStatus(String)
         case scannerError(key: UInt8, asc: UInt8, ascq: UInt8)
+        /// The scanner rejected a command of the setup sequence as one it
+        /// doesn't accept — the sign of a model that differs from the one the
+        /// sequence was captured from.
+        case setupRefused(step: String, key: UInt8, asc: UInt8, ascq: UInt8)
 
         var errorDescription: String? {
             switch self {
@@ -54,6 +61,12 @@ actor NativeScanner {
             case .unexpectedStatus(let detail): detail
             case .scannerError(let key, let asc, let ascq):
                 Self.describe(key: key, asc: asc, ascq: ascq)
+            case .setupRefused(let step, let key, let asc, let ascq):
+                String(
+                    format: "The scanner didn't accept the setup step “%@” "
+                        + "(sense %02x/%02x/%02x). Help ▸ Scanner Diagnostics "
+                        + "can make a report of how it responds.",
+                    step, key, asc, ascq)
             }
         }
 
@@ -103,6 +116,8 @@ actor NativeScanner {
         ProcessInfo.processInfo.environment["SNAPSCAN_DRIVER_TRACE"] != nil
 
     private var transport: USBTransport?
+    /// Handed to every transport this actor opens, while diagnostics run.
+    private(set) var recorder: TransferRecorder?
 
     // MARK: - Connection
 
@@ -110,12 +125,25 @@ actor NativeScanner {
         USBTransport.present(vendorID: vendorID, preferredProductID: verifiedProductID) != nil
     }
 
+    /// The open connection, claiming the scanner's interface if it isn't
+    /// already held.
+    func claim() throws -> USBTransport {
+        if let transport { return transport }
+        let opened = try USBTransport(
+            vendorID: Self.vendorID, preferredProductID: Self.verifiedProductID)
+        opened.recorder = recorder
+        transport = opened
+        return opened
+    }
+
+    /// Starts or stops recording every exchange with the scanner.
+    func setRecorder(_ recorder: TransferRecorder?) {
+        self.recorder = recorder
+        transport?.recorder = recorder
+    }
+
     func open() throws -> DeviceInfo {
-        if transport == nil {
-            transport = try USBTransport(
-                vendorID: Self.vendorID, preferredProductID: Self.verifiedProductID)
-        }
-        guard let transport else { throw ScanError.notOpen }
+        let transport = try claim()
 
         _ = try transport.send(cdb: ScannerCommands.testUnitReady())
         let (_, data) = try transport.send(cdb: ScannerCommands.inquiry(), dataIn: 96)
@@ -173,9 +201,14 @@ actor NativeScanner {
 
     // MARK: - Scanning
 
+    /// Scans sheets until the feeder is empty. A `lenientSetup` batch goes on
+    /// past setup steps the scanner refuses rather than stopping at the
+    /// first — how diagnostics find out whether an unfamiliar model can scan
+    /// without them.
     func scanBatch(
         settings: ScanSettings,
         startingAtPage firstPageIndex: Int,
+        lenientSetup: Bool = false,
         onEvent: @escaping @Sendable (BatchEvent) -> Void
     ) throws -> BatchResult {
         guard let transport else { throw ScanError.notOpen }
@@ -192,11 +225,15 @@ actor NativeScanner {
         var pagesScanned = 0
 
         // The device needs its full setup sequence before it will scan.
-        try prepare(transport: transport, settings: settings, windows: windows)
+        let skipped = try prepare(
+            transport: transport, settings: settings, windows: windows,
+            lenient: lenientSetup)
 
         while true {
             if cancelFlag.isCancelled {
-                return BatchResult(pagesScanned: pagesScanned, feederWasEmpty: false)
+                return BatchResult(
+                    pagesScanned: pagesScanned, feederWasEmpty: false,
+                    skippedSetupSteps: skipped)
             }
 
             // Feed a sheet. An empty hopper reports itself here.
@@ -208,7 +245,8 @@ actor NativeScanner {
                     // Feeder empty is the expected end of a batch.
                     if key == 0x03 || key == 0x02 {
                         return BatchResult(
-                            pagesScanned: pagesScanned, feederWasEmpty: pagesScanned == 0)
+                            pagesScanned: pagesScanned, feederWasEmpty: pagesScanned == 0,
+                            skippedSetupSteps: skipped)
                     }
                     throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
                 }
@@ -239,71 +277,127 @@ actor NativeScanner {
         }
     }
 
-    /// Replays the initialization the device requires before it will scan
+    /// One command of the setup sequence.
+    struct SetupStep: Sendable {
+        let label: String
+        let cdb: [UInt8]
+        var dataOut: Data?
+        var dataIn = 0
+        /// Its answer only informs the host: whatever happens to it, setup
+        /// carries on.
+        var optional = false
+    }
+
+    /// The initialization the device requires before it will scan
     /// (docs/PROTOCOL.md §7): identity diagnostic, pre-read mode, mode
     /// pages, window descriptors, the table download, and scanner control.
-    private func prepare(
-        transport: USBTransport, settings: ScanSettings,
-        windows: [ScannerCommands.Window]
-    ) throws {
-        func run(
-            _ label: String, _ cdb: [UInt8], dataOut: Data? = nil, dataIn: Int = 0
-        ) throws {
-            Self.trace("\(label)…")
-            let (status, _) = try transport.send(
-                cdb: cdb, dataOut: dataOut, dataIn: dataIn)
-            if status == .checkCondition {
-                let verdict = try Self.sense(transport)
-                if case .other(let key, let asc, let ascq) = verdict, key > 0x01 {
-                    throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
-                }
-            }
-        }
-
-        let descriptor = Self.windowSettings(for: settings, window: .front)
+    nonisolated static func setupSteps(
+        for settings: ScanSettings, windows: [ScannerCommands.Window]
+    ) -> [SetupStep] {
+        let descriptor = windowSettings(for: settings, window: .front)
+        let sensorRead = SetupStep(
+            label: "sensor read", cdb: ScannerCommands.hardwareStatus(), dataIn: 12,
+            optional: true)
 
         // Identity handshake.
         let deviceID = ScannerCommands.diagnosticCommand("GET DEVICE ID")
-        try run(
-            "GET DEVICE ID",
-            ScannerCommands.sendDiagnostic(parameterLength: deviceID.count),
-            dataOut: deviceID)
-        try run("read diagnostic", ScannerCommands.readDiagnostic(allocationLength: 10), dataIn: 10)
-        try run("test unit ready", ScannerCommands.testUnitReady())
-        _ = try? readSensors()
+        var steps = [
+            SetupStep(
+                label: "GET DEVICE ID",
+                cdb: ScannerCommands.sendDiagnostic(parameterLength: deviceID.count),
+                dataOut: deviceID),
+            SetupStep(
+                label: "read diagnostic",
+                cdb: ScannerCommands.readDiagnostic(allocationLength: 10), dataIn: 10),
+            SetupStep(label: "test unit ready", cdb: ScannerCommands.testUnitReady()),
+            sensorRead,
+        ]
 
         // Pre-read mode carries the geometry the scan will use.
         let preRead = ScannerCommands.preReadModePayload(descriptor)
-        try run(
-            "SET PRE READMODE",
-            ScannerCommands.sendDiagnostic(parameterLength: preRead.count),
-            dataOut: preRead)
+        steps.append(
+            SetupStep(
+                label: "SET PRE READMODE",
+                cdb: ScannerCommands.sendDiagnostic(parameterLength: preRead.count),
+                dataOut: preRead))
 
         // Auto paper size relies on the scanner ending the frame at the
         // sheet's trailing edge; that is a mode page, not a window field.
         let autoLength = settings.paperSize == .auto
         for page in ScannerCommands.setupModePages(autoLength: autoLength) {
             let payload = ScannerCommands.modePage(code: page.code, data: page.data)
-            try run(
-                String(format: "mode page %02x", page.code),
-                ScannerCommands.modeSelect(parameterLength: payload.count),
-                dataOut: payload)
+            steps.append(
+                SetupStep(
+                    label: String(format: "mode page %02x", page.code),
+                    cdb: ScannerCommands.modeSelect(parameterLength: payload.count),
+                    dataOut: payload))
         }
 
         // One SET WINDOW carrying every window's descriptor.
-        let windowPayload = ScannerCommands.windowParameterList(
-            descriptor, windows: windows)
-        try run(
-            "set window (\(windows.count))",
-            ScannerCommands.setWindow(parameterLength: windowPayload.count),
-            dataOut: windowPayload)
+        let windowPayload = ScannerCommands.windowParameterList(descriptor, windows: windows)
+        steps.append(
+            SetupStep(
+                label: "set window (\(windows.count))",
+                cdb: ScannerCommands.setWindow(parameterLength: windowPayload.count),
+                dataOut: windowPayload))
 
         let table = ScannerCommands.quantizationTablePayload
-        try run(
-            "table download",
-            ScannerCommands.send(dataType: 0x88, length: table.count), dataOut: table)
-        try run("scanner control", ScannerCommands.scannerControl(subcommand: 0x05))
-        _ = try? readSensors()
+        steps.append(
+            SetupStep(
+                label: "table download",
+                cdb: ScannerCommands.send(dataType: 0x88, length: table.count),
+                dataOut: table))
+        steps.append(
+            SetupStep(
+                label: "scanner control",
+                cdb: ScannerCommands.scannerControl(subcommand: 0x05)))
+        steps.append(sensorRead)
+        return steps
+    }
+
+    /// How the scanner answered one setup step.
+    enum StepOutcome: Sendable, Equatable {
+        case accepted
+        /// A check condition whose sense is worse than "recovered".
+        case refused(key: UInt8, asc: UInt8, ascq: UInt8)
+    }
+
+    /// Sends one setup step. Throws only when the connection itself fails.
+    static func run(_ step: SetupStep, on transport: some ScannerLink) throws -> StepOutcome {
+        let (status, _) = try transport.send(
+            cdb: step.cdb, dataOut: step.dataOut, dataIn: step.dataIn)
+        guard status == .checkCondition else { return .accepted }
+        if case .other(let key, let asc, let ascq) = try sense(transport), key > 0x01 {
+            return .refused(key: key, asc: asc, ascq: ascq)
+        }
+        return .accepted
+    }
+
+    /// Runs the setup sequence. Strictly, the first refusal stops it; a
+    /// lenient run goes on and returns the steps it had to leave out.
+    private func prepare(
+        transport: USBTransport, settings: ScanSettings,
+        windows: [ScannerCommands.Window], lenient: Bool
+    ) throws -> [String] {
+        var skipped: [String] = []
+        for step in Self.setupSteps(for: settings, windows: windows) {
+            guard !step.optional else {
+                _ = try? Self.run(step, on: transport)
+                continue
+            }
+            Self.trace("\(step.label)…")
+            guard case .refused(let key, let asc, let ascq) = try Self.run(step, on: transport)
+            else { continue }
+            if lenient {
+                skipped.append(step.label)
+            } else if key == 0x05 {
+                // Illegal request: the command itself, not the paper path.
+                throw ScanError.setupRefused(step: step.label, key: key, asc: asc, ascq: ascq)
+            } else {
+                throw ScanError.scannerError(key: key, asc: asc, ascq: ascq)
+            }
+        }
+        return skipped
     }
 
     /// One side of a sheet as it streams in.
@@ -500,7 +594,7 @@ actor NativeScanner {
     }
 
     /// Issues REQUEST SENSE and interprets the reply.
-    private static func sense(_ transport: some ScannerLink) throws
+    static func sense(_ transport: some ScannerLink) throws
         -> ScannerCommands.SenseVerdict
     {
         let (_, data) = try transport.send(
@@ -512,7 +606,7 @@ actor NativeScanner {
     }
 
     /// Translates app settings into a window descriptor.
-    private static func windowSettings(
+    nonisolated private static func windowSettings(
         for settings: ScanSettings, window: ScannerCommands.Window
     ) -> ScannerCommands.WindowSettings {
         let paper = settings.paperSize.geometryUnits

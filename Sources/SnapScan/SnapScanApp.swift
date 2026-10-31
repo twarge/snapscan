@@ -93,5 +93,14 @@ struct SnapScanApp: App {
         .defaultSize(width: 520, height: 620)
         .windowResizability(.contentMinSize)
 
+        // Help ▸ Scanner Diagnostics, and Settings ▸ Diagnostics.
+        Window("Scanner Diagnostics", id: DiagnosticsView.windowID) {
+            DiagnosticsView()
+                .environment(engine)
+        }
+        .defaultSize(width: 760, height: 560)
+        .windowResizability(.contentMinSize)
+        // A run holds the scanner; it shouldn't come back unasked at launch.
+        .restorationBehavior(.disabled)
     }
 }
