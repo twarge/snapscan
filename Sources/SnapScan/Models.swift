@@ -312,6 +312,32 @@ final class ActiveDocument: Identifiable {
     }
 }
 
+nonisolated extension Array where Element: Identifiable {
+    /// The elements in `ids` taken out, in the order they stand, and put
+    /// back as one run at `offset` — an index into the array as it is now,
+    /// the way `move(fromOffsets:toOffset:)` counts.
+    func moving(_ ids: Set<Element.ID>, toOffset offset: Int) -> [Element] {
+        let moved = filter { ids.contains($0.id) }
+        var rest = filter { !ids.contains($0.id) }
+        let landing = self[..<Swift.min(Swift.max(0, offset), count)]
+            .filter { !ids.contains($0.id) }.count
+        rest.insert(contentsOf: moved, at: landing)
+        return rest
+    }
+
+    /// The elements in the order `ids` gives. Ones `ids` doesn't name — added
+    /// since that order was taken — keep their relative order after the rest.
+    func ordered(like ids: [Element.ID]) -> [Element] {
+        let rank = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return enumerated()
+            .sorted { lhs, rhs in
+                (rank[lhs.element.id] ?? ids.count + lhs.offset)
+                    < (rank[rhs.element.id] ?? ids.count + rhs.offset)
+            }
+            .map(\.element)
+    }
+}
+
 nonisolated struct ScannedPage: Identifiable {
     let id = UUID()
     var image: CGImage
@@ -345,6 +371,25 @@ nonisolated struct ScannedPage: Identifiable {
 
     /// The PDF page size: the snapped standard size when there is one,
     /// otherwise the image's natural size.
+    /// The page a quarter turn round, with the paper size it snapped to
+    /// turned with it. The text layer is left off: its lines ran the other
+    /// way, so the page has to be read again.
+    func rotated(clockwise: Bool) -> ScannedPage? {
+        guard var turned = image.rotated(byDegreesClockwise: clockwise ? 90 : 270) else {
+            return nil
+        }
+        if image.bitsPerPixel == 1 {
+            // Turning works in 8-bit gray; black and white goes back to one bit.
+            guard let packed = PageTone.repacked(turned) else { return nil }
+            turned = packed
+        }
+        var page = self
+        page.image = turned
+        page.snappedSizeMM = snappedSizeMM.map { CGSize(width: $0.height, height: $0.width) }
+        page.textLines = []
+        return page
+    }
+
     var sizeInPoints: CGSize {
         if let snappedSizeMM {
             return CGSize(

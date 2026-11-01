@@ -22,6 +22,10 @@ struct ContentView: View {
     @FocusState private var gridFocused: Bool
     @AppStorage("thumbnailSize") private var thumbnailSize = 160.0
     @State private var pinchScale: CGFloat = 1
+    /// Where dragged pages would land: beside this page, on this side.
+    @State private var pageDropTarget: PageDropTarget?
+    /// A grid cell's width; adaptive columns are all one width.
+    @State private var pageCellWidth: CGFloat = 160
 
     // Sidebar inline rename
     @State private var renamingDocumentID: UUID?
@@ -105,11 +109,17 @@ struct ContentView: View {
             },
             deletePages: { deleteSelectedPages() },
             selectAllPages: { selectedPages = Set(engine.pages.map(\.id)) },
+            movePagesEarlier: { moveSelection(earlier: true) },
+            movePagesLater: { moveSelection(earlier: false) },
+            rotatePages: { clockwise in rotatePages(selectedPages, clockwise: clockwise) },
             rename: { beginRenameFromMenu() },
             canScan: !engine.isBusy && engine.scannerPresent,
             canFinish: !engine.isBusy && !engine.isSaving && !engine.pages.isEmpty,
             hasDocument: engine.current != nil,
             canDeletePages: canDeletePages,
+            canMovePagesEarlier: canMoveSelection(earlier: true),
+            canMovePagesLater: canMoveSelection(earlier: false),
+            canRotatePages: !engine.isBusy && pageGridHasKeys && canRotate(selectedPages),
             hasPages: !engine.pages.isEmpty,
             canRename: selection != nil || engine.current != nil,
             target: selection ?? engine.documentURL)
@@ -126,6 +136,22 @@ struct ContentView: View {
 
     private var canDeletePages: Bool {
         !selectedPages.isEmpty && !engine.isBusy && pageGridHasKeys
+    }
+
+    /// Where the selected pages stand, in page order.
+    private var selectedIndices: [Int] {
+        engine.pages.indices.filter { selectedPages.contains(engine.pages[$0].id) }
+    }
+
+    /// False where the step would change nothing: a selection that already
+    /// fills the start can't go earlier, nor one filling the end later.
+    private func canMoveSelection(earlier: Bool) -> Bool {
+        guard !selectedPages.isEmpty, !engine.isBusy, pageGridHasKeys else { return false }
+        let indices = selectedIndices
+        let count = engine.pages.count
+        let packed = earlier
+            ? Array(0..<indices.count) : Array((count - indices.count)..<count)
+        return indices != packed
     }
 
     /// Rename whatever the window is showing: the selected saved scan opens
@@ -477,6 +503,52 @@ struct ContentView: View {
         }
     }
 
+    /// One step earlier or later for the selection, gathered into a run if it
+    /// was spread out: in ahead of the page before its first, or after the
+    /// page following its last.
+    private func moveSelection(earlier: Bool) {
+        let indices = selectedIndices
+        guard let first = indices.first, let last = indices.last else { return }
+        movePages(selectedPages, toOffset: earlier ? first - 1 : last + 2)
+    }
+
+    /// Dropped pages go in beside the page they were dropped on, and stay
+    /// selected, as Finder leaves dropped files.
+    private func dropPages(_ ids: [UUID], beside page: ScannedPage, after: Bool) {
+        guard let index = engine.pages.firstIndex(where: { $0.id == page.id }) else { return }
+        movePages(Set(ids), toOffset: index + (after ? 1 : 0))
+        selectedPages = Set(ids).intersection(engine.pages.map(\.id))
+    }
+
+    /// Whether any of these pages can turn: one still being straightened
+    /// can't until that's done.
+    private func canRotate(_ ids: Set<UUID>) -> Bool {
+        engine.pages.contains { ids.contains($0.id) && !$0.isProcessing }
+    }
+
+    private func rotatePages(_ ids: Set<UUID>, clockwise: Bool) {
+        guard let rotation = engine.rotatePages(withIDs: ids, clockwise: clockwise) else {
+            return
+        }
+        registerUndo(rotation.ids.count == 1 ? "Rotate Page" : "Rotate Pages") { engine in
+            engine.restore(rotation)
+        }
+    }
+
+    private func movePages(_ ids: Set<UUID>, toOffset offset: Int) {
+        guard let order = engine.movePages(withIDs: ids, toOffset: offset) else { return }
+        registerUndo(ids.count == 1 ? "Move Page" : "Move Pages") { engine in
+            engine.restore(order)
+        }
+    }
+
+    /// What dragging a page carries: the whole selection, in page order,
+    /// when the page is part of it; otherwise that page alone.
+    private func dragPayload(for page: ScannedPage) -> PageDrag {
+        guard selectedPages.contains(page.id) else { return PageDrag(ids: [page.id]) }
+        return PageDrag(ids: engine.pages.map(\.id).filter(selectedPages.contains))
+    }
+
     private func deleteSelectedPages() {
         guard !selectedPages.isEmpty else { return }
         let deletion = engine.deletePages(withIDs: selectedPages)
@@ -580,6 +652,11 @@ struct ContentView: View {
 
     private func pageCell(_ page: ScannedPage, number: Int, size: CGFloat) -> some View {
         let isSelected = selectedPages.contains(page.id)
+        // What the context menu's moves act on, as Delete does: the selection
+        // when this page is part of it, else this page.
+        let targets = isSelected ? selectedPages : [page.id]
+        let targetIndices = engine.pages.indices.filter { targets.contains(engine.pages[$0].id) }
+        let dropSide = pageDropTarget?.pageID == page.id ? pageDropTarget?.after : nil
         return VStack(spacing: 6) {
             Image(nsImage: page.thumbnail)
                 .resizable()
@@ -613,6 +690,17 @@ struct ContentView: View {
                             .padding(4)
                     }
                 }
+                // Where a drop would put the pages: a bar in the gap on that
+                // side, half the grid spacing out.
+                .overlay(alignment: dropSide == true ? .trailing : .leading) {
+                    if let dropSide {
+                        Capsule()
+                            .fill(Color.accentColor)
+                            .frame(width: 4)
+                            .padding(.vertical, 4)
+                            .offset(x: dropSide ? 10 : -10)
+                    }
+                }
                 .onTapGesture(count: 2) { enlargedPage = page }
                 .onTapGesture {
                     let commandHeld =
@@ -632,8 +720,37 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(isSelected ? .primary : .secondary)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            if width != pageCellWidth { pageCellWidth = width }
+        }
+        .draggable(dragPayload(for: page)) {
+            PageDragPreview(
+                image: page.thumbnail, count: isSelected ? selectedPages.count : 1)
+        }
+        .onDrop(
+            of: [.snapscanPages],
+            delegate: PageDropDelegate(
+                pageID: page.id, width: pageCellWidth, target: $pageDropTarget,
+                isEnabled: !engine.isBusy
+            ) { ids, after in
+                dropPages(ids, beside: page, after: after)
+            })
         .contextMenu {
             Button("View Larger") { enlargedPage = page }
+            Divider()
+            Button("Rotate Left") { rotatePages(targets, clockwise: false) }
+                .disabled(engine.isBusy || !canRotate(targets))
+            Button("Rotate Right") { rotatePages(targets, clockwise: true) }
+                .disabled(engine.isBusy || !canRotate(targets))
+            Divider()
+            Button("Move to Start") { movePages(targets, toOffset: 0) }
+                .disabled(engine.isBusy || targetIndices == Array(0..<targetIndices.count))
+            Button("Move to End") { movePages(targets, toOffset: engine.pages.count) }
+                .disabled(
+                    engine.isBusy
+                        || targetIndices
+                            == Array((engine.pages.count - targetIndices.count)..<engine.pages.count))
+            Divider()
             Button(
                 isSelected && selectedPages.count > 1
                     ? "Delete \(selectedPages.count) Pages" : "Delete Page",
@@ -839,6 +956,101 @@ struct ContentView: View {
                 : engine.status == .detecting
                     ? "Looking for scanner…"
                     : (engine.scannerName ?? "Scanner ready"))
+    }
+}
+
+// MARK: - Page reordering
+
+extension UTType {
+    /// Pages dragged within the grid. Declared in Info.plist; nothing outside
+    /// the app takes it, so a page can't be dropped anywhere else by mistake.
+    nonisolated static let snapscanPages = UTType(exportedAs: "com.twarge.snapscan.pages")
+}
+
+/// The pages a drag carries, by ID, in page order.
+nonisolated struct PageDrag: Codable, Transferable {
+    let ids: [UUID]
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .snapscanPages)
+    }
+}
+
+struct PageDropTarget: Equatable {
+    let pageID: UUID
+    /// After the page rather than before it.
+    let after: Bool
+}
+
+/// Takes pages dropped on one page of the grid. Which half of the page the
+/// pointer is over says whether they go before or after it.
+private struct PageDropDelegate: DropDelegate {
+    let pageID: UUID
+    let width: CGFloat
+    @Binding var target: PageDropTarget?
+    let isEnabled: Bool
+    let perform: @MainActor ([UUID], Bool) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        isEnabled && info.hasItemsConforming(to: [.snapscanPages])
+    }
+
+    func dropEntered(info: DropInfo) {
+        target = PageDropTarget(pageID: pageID, after: isAfter(info))
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        let updated = PageDropTarget(pageID: pageID, after: isAfter(info))
+        if target != updated { target = updated }
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if target?.pageID == pageID { target = nil }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let after = isAfter(info)
+        target = nil
+        guard let provider = info.itemProviders(for: [.snapscanPages]).first else {
+            return false
+        }
+        let perform = perform
+        _ = provider.loadTransferable(type: PageDrag.self) { result in
+            guard case .success(let drag) = result else { return }
+            Task { @MainActor in perform(drag.ids, after) }
+        }
+        return true
+    }
+
+    private func isAfter(_ info: DropInfo) -> Bool {
+        info.location.x > width / 2
+    }
+}
+
+/// What follows the pointer: the page, with a count when several go along.
+private struct PageDragPreview: View {
+    let image: NSImage
+    let count: Int
+
+    var body: some View {
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 72)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(alignment: .topTrailing) {
+                if count > 1 {
+                    Text("\(count)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor, in: Capsule())
+                        .offset(x: 6, y: -6)
+                }
+            }
     }
 }
 

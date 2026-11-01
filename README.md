@@ -31,7 +31,14 @@ gone are dropped). Select one to preview it; click a selected row again
 Drag a scan into Finder to **move** it there (hold Option to copy instead).
 
 In the page grid: pinch to zoom the thumbnails, click to select pages
-(⌘-click for multiple), and press delete to remove them. The toolbar shows
+(⌘-click for multiple), and press delete to remove them. Drag pages to
+reorder them — the selection moves together, and a bar shows which side
+of the page under the pointer they'll land on — or use Edit ▸ Move Pages
+Earlier/Later (⌥⌘← / ⌥⌘→) and the page's Move to Start/End. Edit ▸
+Rotate Left/Right (⌘L / ⇧⌘L, or the page's menu) turns the selected
+pages a quarter turn; a turned page is read again for its searchable text,
+since the old lines would run sideways. Moves, turns and deletions can be
+undone. The toolbar shows
 live scanner presence — driven by IOKit USB events, so it flips the moment
 the scanner is plugged in or its flap opens — and the Scan button enables
 accordingly.

@@ -75,10 +75,39 @@ nonisolated enum PageTone {
                 }
             }
         }
+        return oneBitImage(packed, width: width, height: height)
+    }
+
+    /// A black-and-white page back at one bit a pixel after a step that
+    /// works in 8-bit gray and keeps it black and white, such as turning it.
+    /// Kept that way, the PDF stores it losslessly instead of as JPEG.
+    static func repacked(_ gray: CGImage) -> CGImage? {
+        let width = gray.width
+        let height = gray.height
+        guard gray.bitsPerPixel == 8, gray.colorSpace?.model == .monochrome,
+            let source = gray.dataProvider?.data, let bytes = CFDataGetBytePtr(source)
+        else { return nil }
+        let rowBytes = (width + 7) / 8
+        var packed = [UInt8](repeating: 0xFF, count: rowBytes * height)
+        packed.withUnsafeMutableBufferPointer { packed in
+            for y in 0..<height {
+                let row = bytes + y * gray.bytesPerRow
+                let out = packed.baseAddress! + y * rowBytes
+                for x in 0..<width where row[x] < 128 {
+                    out[x >> 3] &= ~(0x80 >> UInt8(x & 7))
+                }
+            }
+        }
+        return oneBitImage(packed, width: width, height: height)
+    }
+
+    /// Rows of packed bits, most significant first; 1 is white, as
+    /// DeviceGray reads one bit.
+    private static func oneBitImage(_ packed: [UInt8], width: Int, height: Int) -> CGImage? {
         guard let provider = CGDataProvider(data: Data(packed) as CFData) else { return nil }
         return CGImage(
             width: width, height: height, bitsPerComponent: 1, bitsPerPixel: 1,
-            bytesPerRow: rowBytes, space: CGColorSpaceCreateDeviceGray(),
+            bytesPerRow: (width + 7) / 8, space: CGColorSpaceCreateDeviceGray(),
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false,
             intent: .defaultIntent)

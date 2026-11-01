@@ -711,6 +711,112 @@ final class ScannerEngine {
         return PageDeletion(document: document, entries: removed)
     }
 
+    /// The order a document's pages stood in before a move, so it can be put
+    /// back.
+    struct PageOrder {
+        let document: ActiveDocument
+        let ids: [UUID]
+    }
+
+    /// Moves pages of the current document, keeping their order, to `offset`
+    /// (an index into the pages as they stand), and rewrites the PDF. nil
+    /// when nothing moved.
+    @discardableResult
+    func movePages(withIDs ids: Set<UUID>, toOffset offset: Int) -> PageOrder? {
+        guard !isBusy, let document = current else { return nil }
+        let before = document.pages.map(\.id)
+        let moved = document.pages.moving(ids, toOffset: offset)
+        guard moved.map(\.id) != before else { return nil }
+        document.pages = moved
+        Task { await save(document) }
+        return PageOrder(document: document, ids: before)
+    }
+
+    /// Puts pages back in the order they had before a move.
+    func restore(_ order: PageOrder) {
+        let document = order.document
+        document.pages = document.pages.ordered(like: order.ids)
+        Task { await save(document) }
+    }
+
+    /// What a rotation turned, so it can be turned back.
+    struct PageRotation {
+        let document: ActiveDocument
+        let ids: [UUID]
+        let clockwise: Bool
+        /// The text each page carried before: turning back restores it,
+        /// rather than reading the page again.
+        let textLines: [UUID: [TextLayer.Line]]
+    }
+
+    /// Turns pages of the current document a quarter turn and rewrites the
+    /// PDF. A page still being straightened is left alone — straightening
+    /// would put its own image back over the turned one. nil when nothing
+    /// turned.
+    @discardableResult
+    func rotatePages(withIDs ids: Set<UUID>, clockwise: Bool) -> PageRotation? {
+        guard !isBusy, let document = current else { return nil }
+        var turned: [UUID] = []
+        var previousText: [UUID: [TextLayer.Line]] = [:]
+        for index in document.pages.indices {
+            let page = document.pages[index]
+            guard ids.contains(page.id), !page.isProcessing,
+                let rotated = page.rotated(clockwise: clockwise)
+            else { continue }
+            previousText[page.id] = page.textLines
+            document.pages[index] = rotated
+            turned.append(page.id)
+        }
+        guard !turned.isEmpty else { return nil }
+        // The image is saved at once; the text layer follows when read.
+        Task { await save(document) }
+        readTextAgain(
+            on: turned.filter { settings.searchableText || previousText[$0]?.isEmpty == false },
+            in: document)
+        return PageRotation(
+            document: document, ids: turned, clockwise: clockwise, textLines: previousText)
+    }
+
+    /// Turns pages back and gives them their old text layer.
+    func restore(_ rotation: PageRotation) {
+        let document = rotation.document
+        for index in document.pages.indices where rotation.ids.contains(document.pages[index].id) {
+            guard var back = document.pages[index].rotated(clockwise: !rotation.clockwise)
+            else { continue }
+            back.textLines = rotation.textLines[back.id] ?? []
+            document.pages[index] = back
+        }
+        Task { await save(document) }
+    }
+
+    /// Reads turned pages again for their text layer. A reading that comes
+    /// back after the page has been turned again (or the turn undone)
+    /// describes an image the page no longer has, and is dropped.
+    ///
+    /// Counted as processing, so the document's final save waits for it,
+    /// as it does for straightening.
+    private func readTextAgain(on ids: [UUID], in document: ActiveDocument) {
+        guard !ids.isEmpty else { return }
+        document.needsFinalSave = true
+        for id in ids {
+            guard let image = document.pages.first(where: { $0.id == id })?.image else {
+                continue
+            }
+            document.processingRemaining += 1
+            Task { @MainActor in
+                let lines = await Task.detached(priority: .utility) {
+                    await TextLayer.recognize(in: image)
+                }.value
+                if let index = document.pages.firstIndex(where: { $0.id == id }),
+                    document.pages[index].image === image {
+                    document.pages[index].textLines = lines
+                }
+                document.processingRemaining -= 1
+                await self.processingDrained(for: document)
+            }
+        }
+    }
+
     /// Puts deleted pages back where they were and rewrites the PDF.
     func restore(_ deletion: PageDeletion) {
         let document = deletion.document

@@ -26,6 +26,8 @@
 		AB0800000000000000000008 /* TextLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000018 /* TextLayer.swift */; };
 		AB0800000000000000000009 /* OrientationDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000007 /* OrientationDetector.swift */; };
 		AB020000000000000000000C /* DiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF020000000000000000000C /* DiagnosticsTests.swift */; };
+		AB020000000000000000000D /* PageOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF020000000000000000000D /* PageOrderTests.swift */; };
+		AB020000000000000000000E /* PageRotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF020000000000000000000E /* PageRotationTests.swift */; };
 		AB0100000000000000000019 /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000019 /* Intents.swift */; };
 		AB010000000000000000001A /* ScanNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000001A /* ScanNotifier.swift */; };
 		AB010000000000000000001B /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF010000000000000000001B /* Commands.swift */; };
@@ -85,6 +87,8 @@
 		AF010000000000000000001E /* ScannerDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerDiagnostics.swift; sourceTree = "<group>"; };
 		AF010000000000000000001F /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		AF020000000000000000000C /* DiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsTests.swift; sourceTree = "<group>"; };
+		AF020000000000000000000D /* PageOrderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageOrderTests.swift; sourceTree = "<group>"; };
+		AF020000000000000000000E /* PageRotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageRotationTests.swift; sourceTree = "<group>"; };
 		AF010000000000000000001C /* BlankPageDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlankPageDetector.swift; sourceTree = "<group>"; };
 		AF010000000000000000001D /* PageTone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageTone.swift; sourceTree = "<group>"; };
 		AF0100000000000000000019 /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
@@ -218,6 +222,8 @@
 				AF020000000000000000000A /* SheetReadTests.swift */,
 				AF020000000000000000000B /* PageToneTests.swift */,
 				AF020000000000000000000C /* DiagnosticsTests.swift */,
+				AF020000000000000000000D /* PageOrderTests.swift */,
+				AF020000000000000000000E /* PageRotationTests.swift */,
 			);
 			name = SnapScanTests;
 			path = Tests/SnapScanTests;
@@ -426,6 +432,8 @@
 				AB020000000000000000000A /* SheetReadTests.swift in Sources */,
 				AB020000000000000000000B /* PageToneTests.swift in Sources */,
 				AB020000000000000000000C /* DiagnosticsTests.swift in Sources */,
+				AB020000000000000000000D /* PageOrderTests.swift in Sources */,
+				AB020000000000000000000E /* PageRotationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

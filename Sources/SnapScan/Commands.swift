@@ -16,6 +16,9 @@ struct ScanActions {
     var share: () -> Void
     var deletePages: () -> Void
     var selectAllPages: () -> Void
+    var movePagesEarlier: () -> Void
+    var movePagesLater: () -> Void
+    var rotatePages: (_ clockwise: Bool) -> Void
     var rename: () -> Void
     var canScan: Bool
     var canFinish: Bool
@@ -23,6 +26,12 @@ struct ScanActions {
     /// Also false while a text field is being edited: Delete Pages answers a
     /// bare ⌫, and would otherwise take the key from it.
     var canDeletePages: Bool
+    /// False where the move would change nothing, and, like Delete Pages,
+    /// while a text field has the keys — ⌥⌘← and ⌥⌘→ belong to it then.
+    var canMovePagesEarlier: Bool
+    var canMovePagesLater: Bool
+    /// Also false while every selected page is still being straightened.
+    var canRotatePages: Bool
     var hasPages: Bool
     var canRename: Bool
     /// The file Reveal and Share would act on: the selected scan, or the one
@@ -84,6 +93,22 @@ struct SnapScanCommands: Commands {
             Button("Select All Pages") { actions?.selectAllPages() }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
                 .disabled(actions?.hasPages != true)
+            // Dragging pages in the grid does the same; these are for the
+            // keyboard, and for long documents.
+            Button("Move Pages Earlier") { actions?.movePagesEarlier() }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                .disabled(actions?.canMovePagesEarlier != true)
+            Button("Move Pages Later") { actions?.movePagesLater() }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                .disabled(actions?.canMovePagesLater != true)
+            Divider()
+            // ⌘L as in Preview; ⌘R is Scan here, so right takes ⇧⌘L.
+            Button("Rotate Left") { actions?.rotatePages(false) }
+                .keyboardShortcut("l", modifiers: .command)
+                .disabled(actions?.canRotatePages != true)
+            Button("Rotate Right") { actions?.rotatePages(true) }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(actions?.canRotatePages != true)
             Button("Rename…") { actions?.rename() }
                 .disabled(actions?.canRename != true)
         }
