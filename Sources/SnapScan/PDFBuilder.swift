@@ -57,6 +57,16 @@ nonisolated enum PDFBuilder {
     /// 1.1 MB at medium quality. Returns nil if encoding fails, and the
     /// uncompressed image is used instead.
     private static func jpegBacked(_ image: CGImage, quality: Double) -> CGImage? {
+        guard let data = jpegData(image, quality: quality),
+            let source = CGImageSourceCreateWithData(data as CFData, nil)
+        else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// The JPEG stream a page is stored as at `quality` — exactly the bytes
+    /// the PDF carries for its image, which is what makes PDFSize's estimate
+    /// of a compressed page exact. nil for lineart, which is never JPEG.
+    static func jpegData(_ image: CGImage, quality: Double) -> Data? {
         // Lineart is 1 bit per pixel: JPEG would *grow* it and smear exactly
         // the hard edges it exists to keep crisp. Flate handles it far better.
         guard image.bitsPerPixel > 1 else { return nil }
@@ -68,9 +78,7 @@ nonisolated enum PDFBuilder {
         CGImageDestinationAddImage(
             destination, image,
             [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
-        guard CGImageDestinationFinalize(destination),
-            let source = CGImageSourceCreateWithData(data as CFData, nil)
-        else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
     }
 }

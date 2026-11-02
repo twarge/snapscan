@@ -68,6 +68,12 @@ final class ScannerEngine {
             if oldValue.appendScans, !settings.appendScans {
                 current?.isOpen = false
             }
+            // The open PDF is rewritten at the new level, so its size is what
+            // the header shows. Mid-scan, the batch's own save does it.
+            if oldValue.compression != settings.compression, !isBusy,
+                let document = current, document.url != nil, !document.pages.isEmpty {
+                Task { await save(document) }
+            }
         }
     }
 

@@ -43,6 +43,13 @@ live scanner presence — driven by IOKit USB events, so it flips the moment
 the scanner is plugged in or its flap opens — and the Scan button enables
 accordingly.
 
+Under the document's name, the Compression row picks how the PDF is
+stored — the same setting as in Settings — and shows what the file will
+weigh at it. Changing it rewrites the open PDF. The estimate comes from
+encoding each page the way the PDF stores it, in the background as pages
+finish, so it lands within about half a percent of the saved file;
+hovering over it compares all four levels.
+
 With "Combine scans into one document" on (the default), scanning again
 appends pages to the current PDF — run several batches through the feeder,
 then press **Done** to finalize; the next scan starts a new PDF. With it
